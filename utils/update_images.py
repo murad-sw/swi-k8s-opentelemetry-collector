@@ -28,7 +28,7 @@ IMAGES = [
     {
         "name": "BusyBox",
         "registry": "docker.io",
-        "repository": "busybox",
+        "repository": "library/busybox",
         "yaml_path": ["otel", "init_images", "busy_box"],
         "version_pattern": r"^\d+\.\d+\.\d+$",
     },
@@ -101,6 +101,7 @@ IMAGES = [
 def get_docker_hub_tags(repository, version_pattern=None):
     """Get all tags for a Docker Hub repository with pagination"""
     all_tags = []
+    
     next_url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=1000"
     
     while next_url:
