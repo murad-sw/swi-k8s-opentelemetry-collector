@@ -1,1092 +1,495 @@
-# This values file provides the default values for the chart. Placeholders like
-# <CLUSTER_NAME> will be provided via the values.yaml provided during the cluster
-# onboarding process--or you can provide your own with the appropriate values
-# given to you during initial onboarding for an initial cluster and region.
-
-nameOverride: ""
-fullnameOverride: ""
-
-# array of pair "name: secret"
-imagePullSecrets: []
-
-otel:
-  # e.g. otel.collector.na-01.cloud.solarwinds.com:443
-  # A list of all available OTEL endpoints: https://documentation.solarwinds.com/en/success_center/observability/content/system_requirements/endpoints.htm
-  endpoint: <OTEL_ENVOY_ADDRESS>
-  tls_insecure: false
-
-  # SWO API token used for authentication. If filled it will create secret that will be used by the collector
-  api_token: ""
-
-  # The OTEL collector supports an HTTPS proxy. Specify the full URL of the HTTPS
-  # proxy here. e.g. https_proxy: "https://myproxy.mydomain.com:8080"
-  https_proxy_url: ""
-
+autoupdate:
+  devel: false
+  enabled: false
   image:
-    repository: solarwinds/solarwinds-otel-collector
-    # if not set appVersion field from Chart.yaml is used
-    tag: ""
     pullPolicy: IfNotPresent
-
-  windows:
-    enabled: true
-    image:
-      repository: solarwinds/solarwinds-otel-collector
-      # if not set appVersion field from Chart.yaml is used
-      tag: ""
-      pullPolicy: IfNotPresent
-
-  init_images:
-    # DEPRECATED: The image is now the same as the main image (`otel.image` or `otel.windows.image`)
-    # swi_endpoint_check:
-    #   repository: solarwinds/swi-opentelemetry-collector
-    #   tag: ""
-    #   pullPolicy: IfNotPresent
-
-    busy_box:
-      repository: "busybox"
-      tag: "1.36.1"
-      pullPolicy: IfNotPresent
-
-  node_collector:
-    terminationGracePeriodSeconds: 600
-
-    sending_queue:
-      enabled: true
-
-      # Number of consumers that dequeue batches; ignored if enabled is false
-      num_consumers: 20
-
-      # Maximum number of batches kept in memory before dropping; ignored if enabled is false User should calculate this as num_seconds * requests_per_second / requests_per_batch where:
-      # * num_seconds is the number of seconds to buffer in case of a backend outage
-      # * requests_per_second is the average number of requests per seconds
-      # * requests_per_batch is the average number of requests per batch (if the batch processor is used, the metric send_batch_size can be used for estimation)
-      queue_size: 1000
-
-      # Configuration for persistent data storage of sending queue of node-collector
-      # For detailed explanation see https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/exporterhelper/README.md#persistent-queue
-      persistent_storage:
-        enabled: false
-        directory: /var/lib/swo/sending_queue
-
-    retry_on_failure:
-      enabled: true
-
-      # Time to wait after the first failure before retrying; ignored if enabled is false
-      initial_interval: 10s
-
-      # Is the upper bound on backoff; ignored if enabled is false
-      max_interval: 30s
-
-      # Is the maximum amount of time spent trying to send a batch; ignored if enabled is false
-      max_elapsed_time: 300s
-
-    # Time to wait per individual attempt to send data to SWO
-    timeout: 15s
-
-  # Configuration for metrics collection
-  metrics:
-    # Define whether metrics will be collected and sent
-    enabled: true
-
-    # configuration for metric discovery
-    autodiscovery:
-      # Discovery collector is responsible for discovering and scraping based on Prometheus CRDs - ServiceMonitors, PodMonitors and ScrapeConfigs
-      discovery_collector:
-        enabled: false
-
-        targetAllocator:
-          nodeSelector: {}
-
-          # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-          tolerations: []
-
-          # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-          affinity: {}
-
-          # Selectors for Prometheus CRDs, default is:
-          # matchExpressions: 
-          #   - key: sw.ignore
-          #     operator: NotIn
-          #     values:
-          #     - "true"
-          # see https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspectargetallocatorprometheuscrservicemonitorselector
-          serviceMonitorSelector: {}
-          # see https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspectargetallocatorprometheuscrpodmonitorselector
-          podMonitorSelector: {}
-          # see https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspectargetallocatorprometheuscrprobeselector
-          probeSelector: {}
-          # see https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspectargetallocatorprometheuscrscrapeconfigselector
-          scrapeConfigSelector: {}
-
-        sending_queue:
-          enabled: true
-
-          # Number of consumers that dequeue batches; ignored if enabled is false
-          num_consumers: 20
-
-          # Maximum number of batches kept in memory before dropping; ignored if enabled is false User should calculate this as num_seconds * requests_per_second / requests_per_batch where:
-          # * num_seconds is the number of seconds to buffer in case of a backend outage
-          # * requests_per_second is the average number of requests per seconds
-          # * requests_per_batch is the average number of requests per batch (if the batch processor is used, the metric send_batch_size can be used for estimation)
-          queue_size: 1000
-
-        retry_on_failure:
-          enabled: true
-
-          # Time to wait after the first failure before retrying; ignored if enabled is false
-          initial_interval: 10s
-
-          # Is the upper bound on backoff; ignored if enabled is false
-          max_interval: 30s
-
-          # Is the maximum amount of time spent trying to send a batch; ignored if enabled is false
-          max_elapsed_time: 300s
-
-        # Time to wait per individual attempt to send data to SWO
-        timeout: 15s
-
-        # Batching configuration for logs
-        # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor for configuration reference
-        batch:
-          send_batch_size: 512
-          send_batch_max_size: 512
-          timeout: 1s
-
-        # Telemetry information of the collector
-        # see https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/troubleshooting.md#observability for configuration reference
-        telemetry:
-          logs:
-            enabled: true
-            level: "info"
-          metrics:
-            enabled: true
-            address: 0.0.0.0:8888
-            
-        # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
-        # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
-        memory_limiter:
-          check_interval: 1s
-          limit_mib: 800
-          spike_limit_mib: 300
-
-        # Resource configuration for Log collector
-        resources:
-          requests:
-            memory: 50Mi
-          limits:
-            memory: 1Gi
-
-        # Scheduling configurations
-        nodeSelector: {}
-        # By default: tolerations allow the DaemonSet to be deployed on tainted nodes so that we can also collect logs from those nodes.
-        tolerations: []
-        # By default: affinity is set to run the DaemonSet on linux amd64.
-        affinity: {}
-
-        # HPA configuration for the discovery collector
-        # For more options see: https://github.com/open-telemetry/opentelemetry-operator/blob/main/docs/api/opentelemetrycollectors.md#opentelemetrycollectorspecautoscaler-1
-        # default:
-        #   minReplicas: 1
-        #   maxReplicas: 5
-        #   targetCPUUtilization: 80
-        #   targetMemoryUtilization: 80
-        autoscaler: {}
-
-      prometheusEndpoints:
-        # Define whether metrics will be discovered and scraped by prometheus annotations
-        enabled: true
-
-        # Additional custom rule for discovery (following rule is always present: type == "pod" && annotations["prometheus.io/scrape"] == "true")
-        # Available fields
-        #   `id` - ID of source endpoint
-        #   `name` - name of the pod
-        #   `namespace` - namespace of the pod
-        #   `uid` - unique id of the pod
-        #   `labels` - map of labels set on the pod
-        #   `annotations` - map of annotations set on the pod
-        # Example: namespace == "test-namespace" && labels["app"] == "test-app"
-        additionalRules: ""
-
-        podMonitors:
-          rules: []
-        # Additional custom rules for discovery
-        # Available fields for podMonitors rules are the same as for additionalRules
-
-        #    - rule: labels["example"] == "value"
-        #      metrics_path: "/metrics"
-        #      endpoint_port: 8080
-
-        customTransformations:
-          # list of metrics that are counters should be converted to rate
-          counterToRate: []
-
-        # This filter is applied after metric processing, it is the place where metrics could be filtered out
-        # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
-        filter: {}
-
-      # Prefix that will be added to all metrics
-      prefix: "k8s."
-
-    # DEPRECATED: Use otel.swi_endpoint_check.enabled instead
-    # swi_endpoint_check: true
-
-    # Check if Prometheus endpoint (provided by otel.metrics.prometheus.url) is reachable
-    prometheus_check: false
-
-    sending_queue:
-      enabled: true
-
-      # Number of consumers that dequeue batches; ignored if enabled is false
-      num_consumers: 20
-
-      # Maximum number of batches kept in memory before dropping; ignored if enabled is false User should calculate this as num_seconds * requests_per_second / requests_per_batch where:
-      # * num_seconds is the number of seconds to buffer in case of a backend outage
-      # * requests_per_second is the average number of requests per seconds
-      # * requests_per_batch is the average number of requests per batch (if the batch processor is used, the metric send_batch_size can be used for estimation)
-      queue_size: 1000
-
-      # When enabled sending_queue of metrics collector will be offloaded to disk. It will use emptyDir volume
-      # This will reduce amount of memory, but it will use slightly more CPU and will have slightly lower throughput
-      offload_to_disk: false
-
-    retry_on_failure:
-      enabled: true
-
-      # Time to wait after the first failure before retrying; ignored if enabled is false
-      initial_interval: 10s
-
-      # Is the upper bound on backoff; ignored if enabled is false
-      max_interval: 30s
-
-      # Is the maximum amount of time spent trying to send a batch; ignored if enabled is false
-      max_elapsed_time: 300s
-
-    prometheus:
-      # URL of prometheus where to scrape
-      url: ""
-
-      # Prometheus URL scheme. It can take the values `http` or `https`
-      scheme: http
-
-      # How often the metrics are scraped from Prometheus
-      scrape_interval: 60s
-
-    # Time to wait per individual attempt to send data to SWO
-    timeout: 15s
-
-    # Configuration for endpoint on which metrics collector receives OpenTelemetry metrics
-    otlp_endpoint:
-      port: 4317
-
-    kube-state-metrics:
-      # URL of kube-state-metrics where to scrape
-      url: ""
-
-      # Prometheus URL scheme. It can take the values `http` or `https`
-      scheme: http
-
-      # How often the metrics are scraped from Prometheus
-      scrape_interval: 60s
-
-    control_plane:
-      coredns:
-        enabled: true
-
-      controller_manager:
-        enabled: true
-
-        label_selector:
-          key: "component"
-          value: "kube-controller-manager"
-        scheme: "https"
-        metrics_path: "/metrics"
-        port: 10257
-      etcd:
-        enabled: true
-
-        scheme: "http"
-        metrics_path: "/metrics"
-        port: 2379
-
-        # scrape kind can be either "static" or "pod"
-        # static - scrape etcd from static endpoints defined in static-endpoints
-        # pod - scrape etcd from etcd pods in the cluster (see label-selector configuration)
-        scrape_kind: "pod"
-
-        # label_selector is used to find etcd pods in the cluster
-        label_selector:
-          key: "component"
-          value: "etcd"
-
-        # If scrape_kind is set to "static" and endpoints are set etcd will be scraped from those ips
-        # this covers scenario where etcd is not running in k8s cluster
-        # example: 
-        # static_endpoints:
-        #   - 10.240.0.32:2379
-        #   - 10.240.0.33:2379
-        #   - 10.240.0.34:2379
-        static_endpoints: []
-      
-
-    # This filter is applied after metric processing, it is the place where metrics could be filtered out
-    # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
-    # With filter conditions we build a global blacklist. So if we exclude data, let's say by specific namespace,
-    # we need to allow other data to be collected. The following example excludes all data from namespaces other than 'foo',
-    # but we need to add a condition that allows data without namespace attribute to be collected.
-    # filter:
-    #   metric:
-    #     - not(IsMatch(resource.attributes["k8s.namespace.name"], "foo") or resource.attributes["k8s.namespace.name"] == nil)
-    filter: {}
-
-    # Use this configuration to scrape extra metrics from Prometheus. Multiple metrics can be specified.
-    # See format in https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors
-    extra_scrape_metrics: []
-
-    # In case `otel.metrics.autodiscovery.prometheusEndpoints.enabled` is set to `true` (which is by default) there is a possibility
-    # that those extra prometheus metrics are scraped by the collector, so in this case `extra_scrape_metrics` is ignored. By setting
-    # `force_extra_scrape_metrics` to `true` you can force the collector to scrape those metrics.
-    force_extra_scrape_metrics: false
-
-    # Batching configuration for metrics
-    # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor for configuration reference
-    batch:
-      send_batch_size: 512
-      send_batch_max_size: 512
-      timeout: 1s
-
-    # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
-    # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
-    memory_limiter:
-      check_interval: 1s
-      limit_mib: 2560
-      spike_limit_mib: 512
-
-    # DEPRECATED: Memory Ballast enables applications to configure memory ballast for the process.
-    # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/extension/ballastextension for configuration reference
-    # memory_ballast:
-    #   size_mib: 700
-
-    # Resource configuration for singleton collector
-    resources:
-      requests:
-        memory: 3Gi
-      limits:
-        # override if your singleton collector is being OOM-killed.
-        memory: 3Gi
-
-    # DEPRECATED: k8s_instrumentation controls the automatic extraction of Kubernetes metadata from resources.
-    # It instruments OpenTelemetry (OTEL) resources being sent.
-    k8s_instrumentation:
-      labels:
-        # Set 'enabled' to true to instrument Kubernetes labels.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific labels from instrumentation.
-        # Example: To exclude labels with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        excludePattern: ""
-
-      annotations:
-        # Set 'enabled' to true to instrument Kubernetes annotations.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific annotations from instrumentation.
-        # Example: To exclude annotations with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        excludePattern: ""
-
-    # Telemetry information of the collector
-    # see https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/troubleshooting.md#observability for configuration reference
-    telemetry:
-      logs:
-        enabled: true
-        level: "info"
-      metrics:
-        enabled: true
-        address: 0.0.0.0:8888
-        podMonitor:
-          # Create a `PodMonitor` to collect Prometheus metrics.
-          enabled: false
-
-          # Additional labels
-          additionalLabels: {}
-          # key: value
-
-          # Override namespace (default is the same as K8s collector)
-          namespace:
-
-          # Interval to scrape metrics
-          interval: 60s
-
-          # Timeout if metrics can't be retrieved in given time interval
-          scrapeTimeout: 25s
-
-    # Scheduling configurations
-    # By default: set to run on linux amd64 nodes
-    nodeSelector: {}
-
-    # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-    tolerations: []
-
-    # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-    affinity: {}
-
-    terminationGracePeriodSeconds: 600
-
-    readinessProbe:
-      initialDelaySeconds: 10
-    livenessProbe:
-      initialDelaySeconds: 10
-
-  # Configuration for Events collection
-  events:
-    # If false none of the events will be collected
-    enabled: true
-
-    # This filter is applied after events processing, it is the place where events could be filtered out
-    # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
-    # With filter conditions we build a global blacklist. So if we exclude data, let's say by specific namespace,
-    # we need to allow other data to be collected. The following example excludes all data from namespaces other than 'foo',
-    # but we need to add a condition that allows data without namespace attribute to be collected.
-    # filter:
-    #   log_record:
-    #     - not(IsMatch(resource.attributes["k8s.namespace.name"], "foo") or resource.attributes["k8s.namespace.name"] == nil)
-    filter: {}
-
-    # Batching configuration for events
-    # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor for configuration reference
-    batch:
-      send_batch_size: 64
-      send_batch_max_size: 64
-      timeout: 1s
-
-    sending_queue:
-      enabled: true
-
-      # Number of consumers that dequeue batches; ignored if enabled is false
-      num_consumers: 10
-
-      # Maximum number of batches kept in memory before dropping; ignored if enabled is false User should calculate this as num_seconds * requests_per_second / requests_per_batch where:
-      # * num_seconds is the number of seconds to buffer in case of a backend outage
-      # * requests_per_second is the average number of requests per seconds
-      # * requests_per_batch is the average number of requests per batch (if the batch processor is used, the metric send_batch_size can be used for estimation)
-      queue_size: 1000
-
-      # When enabled sending_queue of metrics collector will be offloaded to disk. It will use emptyDir volume
-      # This will reduce amount of memory, but it will use slightly more CPU and will have slightly lower throughput
-      offload_to_disk: false
-
-    retry_on_failure:
-      enabled: true
-
-      # Time to wait after the first failure before retrying; ignored if enabled is false
-      initial_interval: 10s
-
-      # Is the upper bound on backoff; ignored if enabled is false
-      max_interval: 30s
-
-      # Is the maximum amount of time spent trying to send a batch; ignored if enabled is false
-      max_elapsed_time: 300s
-
-    # Time to wait per individual attempt to send data to SWO
-    timeout: 15s
-
-    # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
-    # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
-    memory_limiter:
-      check_interval: 1s
-      limit_mib: 800
-      spike_limit_mib: 300
-
-    # DEPRECATED: Memory Ballast enables applications to configure memory ballast for the process.
-    # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/extension/ballastextension for configuration reference
-    # memory_ballast:
-    #   size_mib: 300
-
-    # Resource configuration
-    resources:
-      requests:
-        memory: 1000Mi
-      limits:
-        memory: 1000Mi
-
-    # Telemetry information of the collector
-    # see https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/troubleshooting.md#observability for configuration reference
-    telemetry:
-      logs:
-        enabled: true
-        level: "info"
-      metrics:
-        enabled: true
-        address: 0.0.0.0:8888
-        podMonitor:
-          # Create a `PodMonitor` to collect Prometheus metrics.
-          enabled: false
-
-          # Additional labels
-          additionalLabels: {}
-          # key: value
-
-          # Override namespace (default is the same as K8s collector)
-          namespace:
-
-          # Interval to scrape metrics
-          interval: 60s
-
-          # Timeout if metrics can't be retrieved in given time interval
-          scrapeTimeout: 25s
-
-    # DEPRECATED: k8s_instrumentation controls the automatic extraction of Kubernetes metadata from resources.
-    # It instruments OpenTelemetry (OTEL) resources being sent.
-    k8s_instrumentation:
-      labels:
-        # Set 'enabled' to true to instrument Kubernetes labels.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific labels from instrumentation.
-        # Example: To exclude labels with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        excludePattern: ""
-
-      annotations:
-        # Set 'enabled' to true to instrument Kubernetes annotations.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific annotations from instrumentation.
-        # Example: To exclude annotations with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        excludePattern: ""
-
-    # Scheduling configurations
-    # By default: set to run on linux amd64 nodes
-    nodeSelector: {}
-
-    # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-    tolerations: []
-
-    # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-    affinity: {}
-
-    terminationGracePeriodSeconds: 600
-
-  # Configuration for Logs collection
+    repository: alpine/k8s
+    tag: 1.32.3
+  schedule: '@daily'
+aws_fargate:
+  enabled: false
   logs:
-    # Define whether logs will be collected and sent
-    enabled: true
-
-    # If true, the journal logs on nodes will be collected
-    # Each log has following attributes so they can be filtered out by them using filter configuration:
-    #   * sw.k8s.log.type=journal
-    #   * k8s.cluster.name - name of the cluster (input generated during onboarding)
-    #   * sw.k8s.cluster.uid - UUID of the cluster (input generated during onboarding)
-    #   * sw.k8s.agent.manifest.version - version of the manifest
-    #   * k8s.node.name - node from which the journal logs are coming from
-    journal: true
-
-    # If true, the container logs will be collected
-    # Log collection uses `filelog` OTEL receiver under the hood
-    # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver
-    # Each log has following attributes so they can be filtered out by them using filter configuration:
-    #   * sw.k8s.log.type=container
-    #   * k8s.cluster.name - name of the cluster (input generated during onboarding)
-    #   * sw.k8s.cluster.uid - name of the cluster (input generated during onboarding)
-    #   * sw.k8s.agent.manifest.version - version of the manifest
-    #   * k8s.node.name - node from which the container logs are coming from
-    #   * k8s.container.name - name of the container that is reporting logs
-    #   * k8s.namespace.name - namespace of the container
-    #   * k8s.pod.name - pod of the container
-    #   * run_id - id of the container run
-    #   * k8s.pod.uid - pod's uid
-    container: true
-
-    # This filter is applied after initial log processing, it is the place where logs could be filtered out
-    # see https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
-    # default (prior to k8s collector 4.0.0):
-    # filter:
-    #   include:
-    #     match_type: regexp
-    #     # a log has to match all expressions in the list to be included
-    #     # see https://github.com/google/re2/wiki/Syntax for regexp syntax
-    #     record_attributes:
-    #       # allow only system namespaces (kube-system, kube-public)
-    #       - key: k8s.namespace.name
-    #         value: ^kube-.*$
-    # default (since k8s collector 4.0.0) is to collect all logs
-    #
-    # With filter conditions we build a global blacklist. So if we exclude data, let's say by specific namespace,
-    # we need to allow other data to be collected. The following example excludes all data from namespaces other than 'foo',
-    # but we need to add a condition that allows data without namespace attribute to be collected.
-    # filter:
-    #   log_record:
-    #     - not(IsMatch(resource.attributes["k8s.namespace.name"], "foo") or resource.attributes["k8s.namespace.name"] == nil)
-    filter: {}
-
-    # Batching configuration for logs
-    # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor for configuration reference
-    batch:
-      send_batch_size: 512
-      send_batch_max_size: 512
-      timeout: 1s
-
-    # DEPRECATED: k8s_instrumentation controls the automatic extraction of Kubernetes metadata from resources.
-    # It instruments OpenTelemetry (OTEL) resources being sent.
-    k8s_instrumentation:
-      labels:
-        # Set 'enabled' to true to instrument Kubernetes labels.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific labels from instrumentation.
-        # Example: To exclude labels with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        # by default all labels are excluded
-        excludePattern: ""
-
-      annotations:
-        # Set 'enabled' to true to instrument Kubernetes annotations.
-        enabled: false
-
-        # Provide a regular expression pattern to exclude specific annotations from instrumentation.
-        # Example: To exclude annotations with 'internal' or 'private' in their names, use the following pattern:
-        # excludePattern: ".*internal.*|.*private.*"
-        # by default all annotations are excluded
-        excludePattern: ""
-
-    # Telemetry information of the collector
-    # see https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/troubleshooting.md#observability for configuration reference
-    telemetry:
-      logs:
+    enabled: false
+    filters: ''
+    region: null
+  metrics:
+    autodiscovery:
+      affinity: {}
+      batch:
+        send_batch_max_size: 512
+        send_batch_size: 512
+        timeout: 1s
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 2560
+        spike_limit_mib: 512
+      nodeSelector: {}
+      resources:
+        limits:
+          memory: 3Gi
+        requests:
+          memory: 3Gi
+      retry_on_failure:
         enabled: true
-        level: "info"
-      metrics:
+        initial_interval: 10s
+        max_elapsed_time: 300s
+        max_interval: 30s
+      sending_queue:
         enabled: true
-        address: 0.0.0.0:8888
-        podMonitor:
-          # Create a `PodMonitor` to collect Prometheus metrics.
-          enabled: false
-
-          # Additional labels
-          additionalLabels: {}
-          # key: value
-
-          # Override namespace (default is the same as K8s collector)
-          namespace:
-
-          # Interval to scrape metrics
-          interval: 60s
-
-          # Timeout if metrics can't be retrieved in given time interval
-          scrapeTimeout: 25s
-
-    # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
-    # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
-    memory_limiter:
-      check_interval: 1s
-      limit_mib: 800
-      spike_limit_mib: 300
-
-    # DEPRECATED: Memory Ballast enables applications to configure memory ballast for the process.
-    # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/extension/ballastextension for configuration reference
-    # memory_ballast:
-    #   size_mib: 200
-
-    # Resource configuration for Log collector
-    resources:
-      requests:
-        memory: 50Mi
-      limits:
-        memory: 1Gi
-
-    # Scheduling configurations
-    nodeSelector: {}
-    # By default: tolerations allow the DaemonSet to be deployed on tainted nodes so that we can also collect logs from those nodes.
-    tolerations: []
-    # By default: affinity is set to run the DaemonSet on linux amd64.
-    affinity: {}
-
-    # Properties that can be configured on filelog receiver. For full description of properties
-    # see https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver
-    receiver:
-      start_at: end
-      poll_interval: 200ms
-      max_concurrent_files: 10
-      encoding: utf-8
-      fingerprint_size: 1kb
-      max_log_size: 1MiB
-
-    # Properties that can be configured on filestorage that is used to persist log checkpoints.
-    # see https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/filelogreceiver
-    filestorage:
-      directory: /var/lib/swo/checkpoints
-      timeout: 5s
-      fsync: true
-
-  # Configuration that allows to watch for changes in k8s resources and send full manifests to SWO upon change
-  manifests:
-    enabled: true
-
-    # Persistend storage for k8sobjects receiver
-    persistent_storage: 
-      enabled: false
-      # Storage class for the PVC
-      storageClassName: ""
-
-    # Apart of watching for changes in k8s resources, all resources are periodically pulled
-    # this is mainly to catch resources that were created before the collector was deployed and also to catch
-    # resources that were created during the time when the collector was down (or something unexpected happen)
-    pull_every: 60m
-
-    # This filter is applied after manifest processing, it is the place where manifest events could be filtered out
-    # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
-    filter: {}
-
-  # Check if SWI OTEL endpoint is reachable
-  swi_endpoint_check:
-    enabled: true
-
+        num_consumers: 20
+        offload_to_disk: false
+        queue_size: 1000
+      telemetry:
+        logs:
+          enabled: true
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+          enabled: true
+      timeout: 15s
+      tolerations: []
+beyla:
+  affinity: {}
+  config: {}
+  enabled: false
+  extraCapabilities: []
+  image:
+    pullPolicy: IfNotPresent
+    repository: grafana/beyla
+    tag: 2.1.0
+  nodeSelector: {}
+  resources:
+    limits:
+      cpu: 500m
+      memory: 768Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  tolerations: []
+certmanager:
+  enabled: false
+  installCRDs: true
 cluster:
-  # A unique name of a cluster provided by user during deployment of the Helm chart.
-  name: <CLUSTER_NAME>
-
-  # An optional unique identifier for a cluster provided by user during deployment of the Helm chart.
-  # Useful for example if multiple clusters have to have the same name. Or when the name contains problematic characters.
-  uid: ""
-
-  # Optional global namespace filter for metrics, logs and events. Only include_ or exclude_ lists can be used at a time.
   filter:
     exclude_namespaces: []
     exclude_namespaces_regex: []
     include_namespaces: []
     include_namespaces_regex: []
-
-# If enabled it creates CronJob that will periodically check for new versions of the Helm chart and upgrade if available
-# Keep in mind that in order to update resources the job has full access to the namespace where it is deployed and also have access to modify ClusterRole and ClusterRolBinding
-# Do not enable autoupdate if you need to vendor images used in this Helm chart. Using custom images or image repositories is not compatible with the autoupdate feature.
-autoupdate:
-  enabled: false
-
-  # How often the update will be checked. See https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#writing-a-cronjob-spec
-  schedule: "@daily"
-
-  # Whether it should check for pre-release versions
-  devel: false
-
-  image:
-    repository: "alpine/k8s"
-    tag: "1.27.16"
-    pullPolicy: IfNotPresent
-
-# Set labels to every deployed resource
-# commonLabels:
-
-kube-state-metrics:
-  enabled: true
-
-  prometheusScrape: false
-
-  nodeSelector:
-    kubernetes.io/os: linux
-
-# DEPRECATED: Node exporter is deployed only in case opencost section is enabled. Otherwise this section can be ignored.
-# prometheus-node-exporter:
-
-swoagent:
-  # Whether the SWO Agent should be deployed as part of this chart.
-  # If not, integrations are not available.
-
-  enabled: false
-  image:
-    repository: solarwinds/swo-agent
-    tag: "v2.10.156"
-    pullPolicy: IfNotPresent
-  resources:
-    limits:
-      memory: 800Mi
-    requests:
-      memory: 800Mi
-      cpu: 100m
-  nodeSelector: {}
-  affinity: {}
-  storageClassName:
-  serviceAccountName:
-aws_fargate:
-  # Enable support for AWS EKS Fargate environment
-  enabled: false
-
-  # Configuration for Logs collection
-  logs:
-    # Enable deployment of AWS FluentBit to the Fargate cluster
-    enabled: false
-
-    # AWS region where the Fargate cluster is running
-    region:
-
-    # Include additional FluentBit filters
-    # see https://docs.fluentbit.io/manual/pipeline/filters
-    # NOTE: The FluentBit configuration expects four spaces as indentation within sections
-    filters: ""
-
-  # Configuration for Fargate discovery deployment
-  metrics:
-    autodiscovery:
-      # Time to wait per individual attempt to send data to SWO
-      timeout: 15s
-
-      # Batching configuration
-      # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor for configuration reference
-      batch:
-        send_batch_size: 512
-        send_batch_max_size: 512
-        timeout: 1s
-
-    # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
-      # See https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
-      memory_limiter:
-        check_interval: 1s
-        limit_mib: 2560
-        spike_limit_mib: 512
-
-      # Resource configuration for singleton collector
-      resources:
-        requests:
-          memory: 3Gi
-        limits:
-          # override if your singleton collector is being OOM-killed.
-          memory: 3Gi
-
-      # Scheduling configurations
-      # By default: set to run on linux amd64 nodes
-      nodeSelector: {}
-
-      # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-      tolerations: []
-
-      # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-      affinity: {}
-
-      sending_queue:
-        enabled: true
-
-        # Number of consumers that dequeue batches; ignored if enabled is false
-        num_consumers: 20
-
-        # Maximum number of batches kept in memory before dropping; ignored if enabled is false User should calculate this as num_seconds * requests_per_second / requests_per_batch where:
-        # * num_seconds is the number of seconds to buffer in case of a backend outage
-        # * requests_per_second is the average number of requests per seconds
-        # * requests_per_batch is the average number of requests per batch (if the batch processor is used, the metric send_batch_size can be used for estimation)
-        queue_size: 1000
-
-        # When enabled sending_queue of metrics collector will be offloaded to disk. It will use emptyDir volume
-        # This will reduce amount of memory, but it will use slightly more CPU and will have slightly lower throughput
-        offload_to_disk: false
-
-      retry_on_failure:
-        enabled: true
-
-        # Time to wait after the first failure before retrying; ignored if enabled is false
-        initial_interval: 10s
-
-        # Is the upper bound on backoff; ignored if enabled is false
-        max_interval: 30s
-
-        # Is the maximum amount of time spent trying to send a batch; ignored if enabled is false
-        max_elapsed_time: 300s
-
-      # Telemetry information of the collector
-      # see https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/troubleshooting.md#observability for configuration reference
-      telemetry:
-        logs:
-          enabled: true
-          level: "info"
-        metrics:
-          enabled: true
-          address: 0.0.0.0:8888
-
+  name: <CLUSTER_NAME>
+  uid: ''
 ebpfNetworkMonitoring:
   enabled: true
-  kernelCollector:
+  k8sCollector:
     enabled: true
-
+    relay:
+      image:
+        pullPolicy: IfNotPresent
+        repository: solarwinds/opentelemetry-ebpf-k8s-relay
+        tag: v0.10.3
     telemetry:
       logs:
-        level: "warning"
-
+        level: warning
+    watcher:
+      image:
+        pullPolicy: IfNotPresent
+        repository: solarwinds/opentelemetry-ebpf-k8s-watcher
+        tag: v0.10.3
+  kernelCollector:
+    affinity: {}
+    enabled: true
     image:
-      repository: "solarwinds/opentelemetry-ebpf-kernel-collector"
-      tag: "v0.10.3"
       pullPolicy: IfNotPresent
-
+      repository: solarwinds/opentelemetry-ebpf-kernel-collector
+      tag: v0.10.3
+    nodeSelector: {}
     resources:
       requests:
         memory: 50Mi
-
-    # Scheduling configurations
-    nodeSelector: {}
-
-    # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-    tolerations: []
-
-    # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-    affinity: {}
-
-  k8sCollector:
-    enabled: true
-
     telemetry:
       logs:
-        level: "warning"
-
-    watcher:
-      image:
-        repository: "solarwinds/opentelemetry-ebpf-k8s-watcher"
-        tag: "v0.10.3"
-        pullPolicy: IfNotPresent
-
-    relay:
-      image:
-        repository: "solarwinds/opentelemetry-ebpf-k8s-relay"
-        tag: "v0.10.3"
-        pullPolicy: IfNotPresent
+        level: warning
+    tolerations: []
   reducer:
     disableMetrics: []
-    enableMetrics: []
-
-    # Port on which the reducer will listen for metrics from kernelCollector and k8sCollector
-    telemetryPort: 7000
-
-    # Enables id-id time-series generation. The id-id time-series carry the lowest-level information but are of the greatest volume and cardinality, so are disabled by default.
-    # This also adds IP address to ingested metrics which is useful for identification which Pod from the workload is causing the traffic.
     enableIdIdGeneration: false
-
-    # At present, scaling the reducer is a manual try-and-see task. The reducer runs a data processing pipeline separated into three stages – ingest, matching and aggregation.
-    # Usually, the best approach is to scale all the stages by the same factor. Keep in mind that each shard consumes a certain amount of memory, whether it is heavily loaded or not.
-    # Read more info about architecture https://github.com/open-telemetry/opentelemetry-ebpf/blob/main/docs/reducer/architecture.md
+    enableMetrics: []
+    image:
+      pullPolicy: IfNotPresent
+      repository: solarwinds/opentelemetry-ebpf-reducer
+      tag: v0.10.3
+    numAggregationShards: 3
     numIngestShards: 3
     numMatchingShards: 3
-    numAggregationShards: 3
-
     telemetry:
       logs:
-        level: "warning"
+        level: warning
       metrics:
         enabled: false
-
-    image:
-      repository: "solarwinds/opentelemetry-ebpf-reducer"
-      tag: "v0.10.3"
-      pullPolicy: IfNotPresent
-# DEPRECATED: Prometheus is deployed only in case opencost section is enabled. Otherwise this section can be ignored.
-# prometheus:
-
-# DEPRECATED: The OpenCost sub-chart is no longer included
-# opencost:
-
-# Enable support for OpenShift environment
+    telemetryPort: 7000
+fullnameOverride: ''
+imagePullSecrets: []
+kube-state-metrics:
+  enabled: true
+  nodeSelector:
+    kubernetes.io/os: linux
+  prometheusScrape: false
+nameOverride: ''
 openshift:
   enabled: false
-
-prometheusCRDs:
-  install: false
-
 operator:
-  enabled: false
-  manager:
-    image:
-      repository: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
-      tag: "0.119.0"
-    targetAllocatorImage:
-      repository: ""
-      tag: ""
-    collectorImage:
-      # it is not yet supported to run collector instrumented by operator
-      # filling this to satisfy subchart requirement
-      repository: "solarwinds/swi-opentelemetry-collector"
-    autoInstrumentationImage:
-      # Currently only Java and Python supported, other languages are TBD
-      java:
-        repository: "solarwinds/autoinstrumentation-java"
-        tag: "2.13.0"
-      nodejs:
-        repository: ""
-        tag: ""
-      python:
-        repository: "solarwinds/autoinstrumentation-python"
-        tag: "3.6.0"
-      dotnet:
-        repository: ""
-        tag: ""
-      go:
-        repository: ""
-        tag: ""
   admissionWebhooks:
     certManager:
-      enabled: true
-      # ensure that Certificate and Issuer resource are created after CRD's of cert-manager
       certificateAnnotations:
-        "helm.sh/hook": post-install,post-upgrade
-        "helm.sh/hook-weight": "1"
+        helm.sh/hook: post-install,post-upgrade
+        helm.sh/hook-weight: '1'
+      enabled: true
       issuerAnnotations:
-        "helm.sh/hook": post-install,post-upgrade
-        "helm.sh/hook-weight": "1"
-
-certmanager:
+        helm.sh/hook: post-install,post-upgrade
+        helm.sh/hook-weight: '1'
   enabled: false
-  installCRDs: true
-
-# Wait jobs ensure that subcharts are fully deployed before any resources deployed by post-install hooks
-# which avoids unnecessary installation failues (e.g. OpenTelemetryCollector custom resources should be deployed after operator is fully functional)
-waitJobs:
-  # is valid only if `operator.enable=true`, otherwise is ignored
-  operator:
-    enabled: true
-
+  manager:
+    autoInstrumentationImage:
+      dotnet:
+        repository: ''
+        tag: ''
+      go:
+        repository: ''
+        tag: ''
+      java:
+        repository: solarwinds/autoinstrumentation-java
+        tag: 2.13.0
+      nodejs:
+        repository: ''
+        tag: ''
+      python:
+        repository: solarwinds/autoinstrumentation-python
+        tag: 3.6.0
+    collectorImage:
+      repository: solarwinds/swi-opentelemetry-collector
     image:
-      repository: "alpine/k8s"
-      tag: "1.27.16"
-      pullPolicy: IfNotPresent
-
-  # is valid only if `certmanager.enable=true`, otherwise is ignored
-  certmanager:
+      repository: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
+      tag: 0.119.0
+    targetAllocatorImage:
+      repository: ''
+      tag: ''
+otel:
+  api_token: ''
+  endpoint: <OTEL_ENVOY_ADDRESS>
+  events:
+    affinity: {}
+    batch:
+      send_batch_max_size: 64
+      send_batch_size: 64
+      timeout: 1s
     enabled: true
-
-    image:
-      repository: "alpine/k8s"
-      tag: "1.27.16"
-      pullPolicy: IfNotPresent
-  
-beyla:
-  enabled: false
-
+    filter: {}
+    k8s_instrumentation:
+      annotations:
+        enabled: false
+        excludePattern: ''
+      labels:
+        enabled: false
+        excludePattern: ''
+    memory_limiter:
+      check_interval: 1s
+      limit_mib: 800
+      spike_limit_mib: 300
+    nodeSelector: {}
+    resources:
+      limits:
+        memory: 1000Mi
+      requests:
+        memory: 1000Mi
+    retry_on_failure:
+      enabled: true
+      initial_interval: 10s
+      max_elapsed_time: 300s
+      max_interval: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      offload_to_disk: false
+      queue_size: 1000
+    telemetry:
+      logs:
+        enabled: true
+        level: info
+      metrics:
+        address: 0.0.0.0:8888
+        enabled: true
+        podMonitor:
+          additionalLabels: {}
+          enabled: false
+          interval: 60s
+          namespace: null
+          scrapeTimeout: 25s
+    terminationGracePeriodSeconds: 600
+    timeout: 15s
+    tolerations: []
+  https_proxy_url: ''
   image:
-    repository: "grafana/beyla"
-    tag: "2.0.3"
     pullPolicy: IfNotPresent
-
+    repository: solarwinds/solarwinds-otel-collector
+    tag: 0.119.12
+  init_images:
+    busy_box:
+      pullPolicy: IfNotPresent
+      repository: busybox
+      tag: 1.36.1
+  logs:
+    affinity: {}
+    batch:
+      send_batch_max_size: 512
+      send_batch_size: 512
+      timeout: 1s
+    container: true
+    enabled: true
+    filestorage:
+      directory: /var/lib/swo/checkpoints
+      fsync: true
+      timeout: 5s
+    filter: {}
+    journal: true
+    k8s_instrumentation:
+      annotations:
+        enabled: false
+        excludePattern: ''
+      labels:
+        enabled: false
+        excludePattern: ''
+    memory_limiter:
+      check_interval: 1s
+      limit_mib: 800
+      spike_limit_mib: 300
+    nodeSelector: {}
+    receiver:
+      encoding: utf-8
+      fingerprint_size: 1kb
+      max_concurrent_files: 10
+      max_log_size: 1MiB
+      poll_interval: 200ms
+      start_at: end
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        memory: 50Mi
+    telemetry:
+      logs:
+        enabled: true
+        level: info
+      metrics:
+        address: 0.0.0.0:8888
+        enabled: true
+        podMonitor:
+          additionalLabels: {}
+          enabled: false
+          interval: 60s
+          namespace: null
+          scrapeTimeout: 25s
+    tolerations: []
+  manifests:
+    enabled: true
+    filter: {}
+    persistent_storage:
+      enabled: false
+      storageClassName: ''
+    pull_every: 60m
+  metrics:
+    affinity: {}
+    autodiscovery:
+      discovery_collector:
+        affinity: {}
+        autoscaler: {}
+        batch:
+          send_batch_max_size: 512
+          send_batch_size: 512
+          timeout: 1s
+        enabled: false
+        memory_limiter:
+          check_interval: 1s
+          limit_mib: 800
+          spike_limit_mib: 300
+        nodeSelector: {}
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            memory: 50Mi
+        retry_on_failure:
+          enabled: true
+          initial_interval: 10s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 20
+          queue_size: 1000
+        targetAllocator:
+          affinity: {}
+          nodeSelector: {}
+          podMonitorSelector: {}
+          probeSelector: {}
+          scrapeConfigSelector: {}
+          serviceMonitorSelector: {}
+          tolerations: []
+        telemetry:
+          logs:
+            enabled: true
+            level: info
+          metrics:
+            address: 0.0.0.0:8888
+            enabled: true
+        timeout: 15s
+        tolerations: []
+      prefix: k8s.
+      prometheusEndpoints:
+        additionalRules: ''
+        customTransformations:
+          counterToRate: []
+        enabled: true
+        filter: {}
+        podMonitors:
+          rules: []
+    batch:
+      send_batch_max_size: 512
+      send_batch_size: 512
+      timeout: 1s
+    control_plane:
+      controller_manager:
+        enabled: true
+        label_selector:
+          key: component
+          value: kube-controller-manager
+        metrics_path: /metrics
+        port: 10257
+        scheme: https
+      coredns:
+        enabled: true
+      etcd:
+        enabled: true
+        label_selector:
+          key: component
+          value: etcd
+        metrics_path: /metrics
+        port: 2379
+        scheme: http
+        scrape_kind: pod
+        static_endpoints: []
+    enabled: true
+    extra_scrape_metrics: []
+    filter: {}
+    force_extra_scrape_metrics: false
+    k8s_instrumentation:
+      annotations:
+        enabled: false
+        excludePattern: ''
+      labels:
+        enabled: false
+        excludePattern: ''
+    kube-state-metrics:
+      scheme: http
+      scrape_interval: 60s
+      url: ''
+    livenessProbe:
+      initialDelaySeconds: 10
+    memory_limiter:
+      check_interval: 1s
+      limit_mib: 2560
+      spike_limit_mib: 512
+    nodeSelector: {}
+    otlp_endpoint:
+      port: 4317
+    prometheus:
+      scheme: http
+      scrape_interval: 60s
+      url: ''
+    prometheus_check: false
+    readinessProbe:
+      initialDelaySeconds: 10
+    resources:
+      limits:
+        memory: 3Gi
+      requests:
+        memory: 3Gi
+    retry_on_failure:
+      enabled: true
+      initial_interval: 10s
+      max_elapsed_time: 300s
+      max_interval: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 20
+      offload_to_disk: false
+      queue_size: 1000
+    telemetry:
+      logs:
+        enabled: true
+        level: info
+      metrics:
+        address: 0.0.0.0:8888
+        enabled: true
+        podMonitor:
+          additionalLabels: {}
+          enabled: false
+          interval: 60s
+          namespace: null
+          scrapeTimeout: 25s
+    terminationGracePeriodSeconds: 600
+    timeout: 15s
+    tolerations: []
+  node_collector:
+    retry_on_failure:
+      enabled: true
+      initial_interval: 10s
+      max_elapsed_time: 300s
+      max_interval: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 20
+      persistent_storage:
+        directory: /var/lib/swo/sending_queue
+        enabled: false
+      queue_size: 1000
+    terminationGracePeriodSeconds: 600
+    timeout: 15s
+  swi_endpoint_check:
+    enabled: true
+  tls_insecure: false
+  windows:
+    enabled: true
+    image:
+      pullPolicy: IfNotPresent
+      repository: solarwinds/solarwinds-otel-collector
+      tag: 0.119.12
+prometheusCRDs:
+  install: false
+swoagent:
+  affinity: {}
+  enabled: false
+  image:
+    pullPolicy: IfNotPresent
+    repository: solarwinds/swo-agent
+    tag: v2.10.165
+  nodeSelector: {}
   resources:
+    limits:
+      memory: 800Mi
     requests:
       cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 768Mi
-
-  # Scheduling configurations
-  nodeSelector: {}
-
-  # See https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
-  tolerations: []
-
-  # See https://kubernetes.io/docs/tasks/configure-pod-container/assign-pods-nodes-using-node-affinity/
-  affinity: {}
-
-  # Overrides in beyla configuration
-  # see https://grafana.com/docs/beyla/latest/configure/ for all the options
-  config: {}
-
-  # -- Extra capabilities for unprivileged / less privileged setup.
-  extraCapabilities: []
-  # - SYS_RESOURCE       # <-- pre 5.11 only. Allows Beyla to increase the amount of locked memory.
-  # - SYS_ADMIN          # <-- Required for Go application trace context propagation, or if kernel.perf_event_paranoid >= 3 on Debian distributions.
-
-
-
+      memory: 800Mi
+  serviceAccountName: null
+  storageClassName: null
+waitJobs:
+  certmanager:
+    enabled: true
+    image:
+      pullPolicy: IfNotPresent
+      repository: alpine/k8s
+      tag: 1.27.16
+  operator:
+    enabled: true
+    image:
+      pullPolicy: IfNotPresent
+      repository: alpine/k8s
+      tag: 1.32.3
