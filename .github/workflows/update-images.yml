@@ -24,7 +24,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyyaml requests PyGithub packaging
+          pip install ruamel.yaml requests PyGithub packaging
+
       
       - name: Configure Git
         run: |
