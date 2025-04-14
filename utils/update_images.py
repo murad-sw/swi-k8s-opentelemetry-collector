@@ -1,108 +1,23 @@
 #!/usr/bin/env python3
 import os
-import sys
 import re
+import sys
 import requests
-import yaml
 import argparse
-import tempfile
 import subprocess
 import logging
 from datetime import datetime
 from packaging import version
 from github import Github
+from ruamel.yaml import YAML
 
-# Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("image-updater")
-
-# Images to check and update
-IMAGES = [
-    {
-        "name": "SWO Collector",
-        "registry": "docker.io",
-        "repository": "solarwinds/solarwinds-otel-collector",
-        "yaml_path": ["otel", "image"],
-        "version_pattern": r"^v?\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "BusyBox",
-        "registry": "docker.io",
-        "repository": "library/busybox",
-        "yaml_path": ["otel", "init_images", "busy_box"],
-        "version_pattern": r"^\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "SWO Windows Collector",
-        "registry": "docker.io",
-        "repository": "solarwinds/solarwinds-otel-collector",
-        "yaml_path": ["otel", "windows", "image"],
-        "version_pattern": r"^v?\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "SWO Agent",
-        "registry": "docker.io",
-        "repository": "solarwinds/swo-agent",
-        "yaml_path": ["swoagent", "image"],
-        "version_pattern": r"^v\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "eBPF Kernel Collector",
-        "registry": "docker.io",
-        "repository": "solarwinds/opentelemetry-ebpf-kernel-collector",
-        "yaml_path": ["ebpfNetworkMonitoring", "kernelCollector", "image"],
-        "version_pattern": r"^v\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "eBPF K8s Watcher",
-        "registry": "docker.io",
-        "repository": "solarwinds/opentelemetry-ebpf-k8s-watcher",
-        "yaml_path": ["ebpfNetworkMonitoring", "k8sCollector", "watcher", "image"],
-        "version_pattern": r"^v\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "eBPF K8s Relay",
-        "registry": "docker.io",
-        "repository": "solarwinds/opentelemetry-ebpf-k8s-relay",
-        "yaml_path": ["ebpfNetworkMonitoring", "k8sCollector", "relay", "image"],
-        "version_pattern": r"^v\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "eBPF Reducer",
-        "registry": "docker.io",
-        "repository": "solarwinds/opentelemetry-ebpf-reducer",
-        "yaml_path": ["ebpfNetworkMonitoring", "reducer", "image"],
-        "version_pattern": r"^v\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "Beyla",
-        "registry": "docker.io",
-        "repository": "grafana/beyla",
-        "yaml_path": ["beyla", "image"],
-        "version_pattern": r"^\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "Alpine K8s",
-        "registry": "docker.io",
-        "repository": "alpine/k8s",
-        "yaml_path": ["autoupdate", "image"],
-        "version_pattern": r"^\d+\.\d+\.\d+$",
-    },
-    {
-        "name": "Alpine K8s (Wait Jobs)",
-        "registry": "docker.io",
-        "repository": "alpine/k8s",
-        "yaml_path": ["waitJobs", "operator", "image"],
-        "version_pattern": r"^\d+\.\d+\.\d+$",
-    },
-    # Add other images as needed
-]
 
 def get_docker_hub_tags(repository, version_pattern=None):
     """Get all tags for a Docker Hub repository with pagination"""
     all_tags = []
-    
-    next_url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=1000"
+    next_url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=100"
     
     while next_url:
         try:
@@ -150,39 +65,131 @@ def get_latest_tag(registry, repository, version_pattern=None):
         tags = get_docker_hub_tags(repository, version_pattern)
         return get_latest_version(tags)
     
-    # Add support for other registries as needed
     logger.warning(f"Unsupported registry: {registry}")
     return None
 
-def get_yaml_value(yaml_data, path):
-    """Get a value from a nested YAML dictionary"""
-    current = yaml_data
-    for part in path:
-        if part not in current:
-            return None
-        current = current[part]
-    return current
+def detect_images_in_yaml(yaml_data, path=None):
+    """Recursively find image configurations in YAML"""
+    if path is None:
+        path = []
+    
+    found_images = []
+    
+    if isinstance(yaml_data, dict):
+        if "repository" in yaml_data and "tag" in yaml_data:
+            repository = yaml_data["repository"]
+            
+            if not isinstance(repository, str):
+                return found_images
+                
+            if "/" in repository and "." in repository.split("/")[0]:
+                registry = repository.split("/")[0]
+                repo_name = "/".join(repository.split("/")[1:])
+            else:
+                registry = "docker.io"
+                repo_name = repository
+            
+            if repo_name.startswith("localhost") or "<" in repo_name or "example" in repo_name:
+                return found_images
+                
+            name = repository.split("/")[-1].title()
+            if path:
+                name = f"{'.'.join(path)} ({name})"
+            
+            current_tag = yaml_data.get("tag", "")
+            version_pattern = None
+            if current_tag:
+                if current_tag.startswith("v") and re.match(r"^v\d+\.\d+\.\d+", current_tag):
+                    version_pattern = r"^v\d+\.\d+\.\d+$"
+                elif re.match(r"^\d+\.\d+\.\d+", current_tag):
+                    version_pattern = r"^\d+\.\d+\.\d+$"
+            
+            found_images.append({
+                "name": name,
+                "registry": registry,
+                "repository": repository,
+                "yaml_path": path,
+                "version_pattern": version_pattern,
+                "current_tag": current_tag
+            })
+        
+        for key, value in yaml_data.items():
+            if isinstance(value, (dict, list)):
+                found_images.extend(detect_images_in_yaml(value, path + [key]))
+    
+    elif isinstance(yaml_data, list):
+        for i, item in enumerate(yaml_data):
+            if isinstance(item, (dict, list)):
+                found_images.extend(detect_images_in_yaml(item, path + [str(i)]))
+    
+    return found_images
+
+def update_yaml_file(file_path, changes):
+    """Update the YAML file with new image tags, preserving comments and structure"""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    
+    with open(file_path, 'r') as f:
+        data = yaml.load(f)
+    
+    applied_changes = []
+    
+    for change in changes:
+        path = change["path"]
+        new_tag = change["new_tag"]
+        
+        current = data
+        for part in path[:-1]:
+            if part not in current:
+                logger.warning(f"Path {path} not found in YAML")
+                break
+            current = current[part]
+        
+        if path[-1] in current and "tag" in current[path[-1]]:
+            old_tag = current[path[-1]]["tag"]
+            current[path[-1]]["tag"] = new_tag
+            applied_changes.append({
+                "name": change["name"],
+                "old_tag": old_tag,
+                "new_tag": new_tag
+            })
+            logger.info(f"Updated {change['name']}: {old_tag} -> {new_tag}")
+    
+    with open(file_path, 'w') as f:
+        yaml.dump(data, f)
+    
+    return applied_changes
 
 def update_chart_version(chart_file, app_version=None):
     """Update the Chart.yaml file with a new version"""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    
     try:
-        with open(chart_file, "r") as f:
-            chart_data = yaml.safe_load(f)
+        with open(chart_file, 'r') as f:
+            chart_data = yaml.load(f)
         
-        # Increment chart version
         chart_version = chart_data.get("version", "0.0.0")
         version_parts = chart_version.split('.')
         
         if len(version_parts) == 3:
-            version_parts[2] = str(int(version_parts[2]) + 1)
-            new_chart_version = '.'.join(version_parts)
+            version_parts[2] = str(int(version_parts[2].split('-')[0]) + 1)
+            
+            if '-' in chart_version:
+                suffix = chart_version.split('-', 1)[1]
+                new_chart_version = '.'.join(version_parts) + '-' + suffix
+            else:
+                new_chart_version = '.'.join(version_parts)
+            
             chart_data["version"] = new_chart_version
             
             if app_version:
                 chart_data["appVersion"] = app_version
             
-            with open(chart_file, "w") as f:
-                yaml.dump(chart_data, f, default_flow_style=False)
+            with open(chart_file, 'w') as f:
+                yaml.dump(chart_data, f)
             
             logger.info(f"Updated Chart.yaml: version {chart_version} -> {new_chart_version}")
             return True
@@ -196,7 +203,6 @@ def create_pr(changes, github_token, repository, chart_updated=False):
     branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     
     try:
-        # Create branch and commit changes
         subprocess.run(["git", "checkout", "-b", branch_name], check=True)
         subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
         
@@ -208,20 +214,14 @@ def create_pr(changes, github_token, repository, chart_updated=False):
         for change in changes:
             commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
         
-        if chart_updated:
-            commit_msg += "\nAlso updated Chart.yaml with new version and appVersion."
+        with open("commit_msg.txt", "w") as f:
+            f.write(commit_msg)
         
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp:
-            temp.write(commit_msg)
-            temp_path = temp.name
+        subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
+        os.remove("commit_msg.txt")
         
-        subprocess.run(["git", "commit", "-F", temp_path], check=True)
-        os.unlink(temp_path)
-        
-        # Push branch
         subprocess.run(["git", "push", "origin", branch_name], check=True)
         
-        # Create PR via GitHub API
         g = Github(github_token)
         repo = g.get_repo(repository)
         
@@ -246,52 +246,53 @@ def main():
     parser.add_argument("--github-token", help="GitHub token for creating PRs")
     parser.add_argument("--repository", default="solarwinds/swi-k8s-opentelemetry-collector", help="GitHub repository")
     parser.add_argument("--update-chart", action="store_true", help="Update Chart.yaml version")
+    parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
+    parser.add_argument("--chart-file", default="deploy/helm/Chart.yaml", help="Path to Chart.yaml")
+    parser.add_argument("--filter", help="Only update images containing this string in repository")
     args = parser.parse_args()
     
-    # Path to values.yaml
-    values_file = "deploy/helm/values.yaml"
-    chart_file = "deploy/helm/Chart.yaml"
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    with open(args.values_file, 'r') as f:
+        values = yaml.load(f)
     
-    # Read the current values
-    try:
-        with open(values_file, "r") as f:
-            values = yaml.safe_load(f)
-    except Exception as e:
-        logger.error(f"Error reading {values_file}: {str(e)}")
-        sys.exit(1)
+    logger.info(f"Detecting images in {args.values_file}...")
+    detected_images = detect_images_in_yaml(values)
+    logger.info(f"Found {len(detected_images)} images")
+    
+    if args.filter:
+        detected_images = [img for img in detected_images if args.filter in img["repository"]]
+        logger.info(f"After filtering: {len(detected_images)} images")
     
     changes = []
     app_version = None
     
-    for image_info in IMAGES:
-        name = image_info["name"]
-        registry = image_info["registry"]
-        repository = image_info["repository"]
-        yaml_path = image_info["yaml_path"]
-        version_pattern = image_info.get("version_pattern")
+    for image in detected_images:
+        name = image["name"]
+        registry = image["registry"]
+        repository = image["repository"]
+        yaml_path = image["yaml_path"]
+        version_pattern = image["version_pattern"]
+        current_tag = image["current_tag"]
         
         logger.info(f"Checking for updates to {name} ({repository})...")
         
-        # Get the latest tag
+        if not current_tag:
+            logger.info(f"  Skipping {name}, no current tag")
+            continue
+        
         latest_tag = get_latest_tag(registry, repository, version_pattern)
         if not latest_tag:
             logger.warning(f"  Skipping {name}, couldn't determine latest tag")
             continue
         
-        # Get the current values
-        current_values = get_yaml_value(values, yaml_path)
-        if not current_values or not isinstance(current_values, dict):
-            logger.warning(f"  Skipping {name}, path {yaml_path} not found in values.yaml")
-            continue
-        
-        current_tag = current_values.get("tag")
-        
-        # Save main collector version for Chart.appVersion
-        if name == "SWO Collector" and latest_tag:
+        if repository == "solarwinds/solarwinds-otel-collector" and yaml_path == ["otel", "image"]:
             app_version = latest_tag
         
-        # Check if update needed
-        if current_tag != latest_tag:
+        if current_tag == latest_tag:
+            logger.info(f"  Latest version already in use: {current_tag}")
+            continue
+        else:
             logger.info(f"  Update available: {current_tag} -> {latest_tag}")
             changes.append({
                 "name": name,
@@ -299,31 +300,18 @@ def main():
                 "old_tag": current_tag,
                 "new_tag": latest_tag
             })
-            
-            # Update the values
-            if not args.dry_run:
-                current_values["tag"] = latest_tag
     
-    # If there are changes, update files
     if changes and not args.dry_run:
-        # Update values.yaml
-        try:
-            with open(values_file, "w") as f:
-                yaml.dump(values, f, default_flow_style=False)
-            logger.info(f"Updated {len(changes)} images in {values_file}")
-        except Exception as e:
-            logger.error(f"Error writing to {values_file}: {str(e)}")
-            sys.exit(1)
+        applied_changes = update_yaml_file(args.values_file, changes)
+        logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
         
-        # Update Chart.yaml if requested
         chart_updated = False
         if args.update_chart:
-            chart_updated = update_chart_version(chart_file, app_version)
+            chart_updated = update_chart_version(args.chart_file, app_version)
         
-        # Create a PR if requested
-        if args.create_pr:
+        if args.create_pr and applied_changes:
             if args.github_token:
-                create_pr(changes, args.github_token, args.repository, chart_updated)
+                create_pr(applied_changes, args.github_token, args.repository, chart_updated)
             else:
                 logger.error("GitHub token is required to create a PR")
     elif not changes:
