@@ -32,7 +32,7 @@ jobs:
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
       
-      - name: Run update script
+      - name: Run update-images script
         run: |
           python utils/update_images.py --create-pr --update-chart --github-token ${{ secrets.GITHUB_TOKEN }}
         env:

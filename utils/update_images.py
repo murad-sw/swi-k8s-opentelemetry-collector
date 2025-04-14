@@ -209,7 +209,6 @@ def create_pr(changes, github_token, repository, chart_updated=False):
         if chart_updated:
             subprocess.run(["git", "add", "deploy/helm/Chart.yaml"], check=True)
         
-        # Prepare commit message
         commit_msg = "Update Docker image versions\n\n"
         for change in changes:
             commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
@@ -244,7 +243,7 @@ def main():
     parser.add_argument("--create-pr", action="store_true", help="Create a PR with the changes")
     parser.add_argument("--dry-run", action="store_true", help="Only print what would be updated")
     parser.add_argument("--github-token", help="GitHub token for creating PRs")
-    parser.add_argument("--repository", default="solarwinds/swi-k8s-opentelemetry-collector", help="GitHub repository")
+    parser.add_argument("--repository", default="murad-sw/swi-k8s-opentelemetry-collector", help="GitHub repository")
     parser.add_argument("--update-chart", action="store_true", help="Update Chart.yaml version")
     parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
     parser.add_argument("--chart-file", default="deploy/helm/Chart.yaml", help="Path to Chart.yaml")
