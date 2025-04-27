@@ -252,14 +252,12 @@ def create_pr(changes, github_token, repository, chart_updated=False):
         g = Github(github_token)
         repo = g.get_repo(repository)
         
-        labels = ["docker", "dependencies"]
         pr = repo.create_pull(
             title="Update Docker image versions",
             body=commit_msg,
             head=branch_name,
             base="master"
         )
-        pr.add_to_labels(*labels)
         
         logger.info(f"Created PR #{pr.number}: {pr.html_url}")
         
