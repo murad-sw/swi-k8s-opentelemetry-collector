@@ -17,7 +17,14 @@ logger = logging.getLogger("image-updater")
 def get_docker_hub_tags(repository, version_pattern=None):
     """Get all tags for a Docker Hub repository with pagination"""
     all_tags = []
-    next_url = f"https://hub.docker.com/v2/repositories/{repository}/tags?page_size=100"
+    
+    if "/" not in repository:
+        api_repository = f"library/{repository}"
+    else:
+        api_repository = repository
+    
+    next_url = f"https://hub.docker.com/v2/repositories/{api_repository}/tags?page_size=100"
+    logger.info(f"Fetching tags from: {next_url}")
     
     while next_url:
         try:
@@ -45,9 +52,6 @@ def get_ghcr_tags(repository, version_pattern=None, github_token=None):
     headers = {}
     if github_token:
         headers["Authorization"] = f"Bearer {github_token}"
-
-    if repository.startswith("ghcr.io/"):
-        repository = repository[8:]
     
     url = f"https://ghcr.io/v2/{repository}/tags/list"
 
@@ -93,11 +97,38 @@ def get_latest_tag(registry, repository, version_pattern=None, github_token=None
         tags = get_docker_hub_tags(repository, version_pattern)
         return get_latest_version(tags)
     elif registry == "ghcr.io":
-        tags = get_ghcr_tags(repository, version_pattern, github_token)
+        if repository.startswith("ghcr.io/"):
+            repo_name = repository[8:]
+        else:
+            repo_name = repository
+            
+        tags = get_ghcr_tags(repo_name, version_pattern, github_token)
+        
+        if not tags and github_token:
+            parts = repo_name.split('/')
+            if len(parts) >= 2:
+                github_repo = f"{parts[0]}/{parts[1]}"
+                logger.info(f"Trying to fetch tags directly from GitHub repo: {github_repo}")
+                tags = get_github_repo_tags(github_repo, github_token)
+                
         return get_latest_version(tags)
     
     logger.warning(f"Unsupported registry: {registry}")
     return None
+
+def get_github_repo_tags(repository_path, github_token=None):
+    """Get tags from GitHub repository"""
+    from github import Github
+    
+    tags = []
+    try:
+        g = Github(github_token)
+        repo = g.get_repo(repository_path)
+        tags = [tag.name for tag in repo.get_tags()]
+    except Exception as e:
+        logger.error(f"Error fetching GitHub tags for {repository_path}: {str(e)}")
+    
+    return tags
 
 def detect_images_in_yaml(yaml_data, path=None):
     """Recursively find image configurations in YAML"""
