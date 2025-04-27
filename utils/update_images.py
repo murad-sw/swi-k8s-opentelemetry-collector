@@ -45,6 +45,9 @@ def get_ghcr_tags(repository, version_pattern=None, github_token=None):
     headers = {}
     if github_token:
         headers["Authorization"] = f"Bearer {github_token}"
+
+    if repository.startswith("ghcr.io/"):
+        repository = repository[8:]
     
     url = f"https://ghcr.io/v2/{repository}/tags/list"
 
