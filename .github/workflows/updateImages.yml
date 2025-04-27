@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -26,13 +28,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruamel.yaml requests PyGithub packaging
       
-      - name: Configure Git for verified commits
+      - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global commit.gpgsign true
-          git config --global gpg.format ssh
-          git config --global user.signingkey ${{ github.actor_id }}:${{ github.actor_id }}
+          git config --global commit.gpgsign false
       
       - name: Run update-images script
         run: |
