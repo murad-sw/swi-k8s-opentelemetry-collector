@@ -21,7 +21,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install ruamel.yaml requests packaging
+        run: pip install ruamel.yaml requests packaging PyGithub
 
       - name: Run updater (no commit)
         run: python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}

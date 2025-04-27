@@ -5,6 +5,8 @@ import argparse
 import logging
 from packaging import version
 from ruamel.yaml import YAML
+from github import Github
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("image-updater")
@@ -111,7 +113,6 @@ def get_latest_tag(registry, repository, version_pattern=None, github_token=None
 
 def get_github_repo_tags(repository_path, github_token=None):
     """Get tags from GitHub repository"""
-    from github import Github
     
     tags = []
     try:
