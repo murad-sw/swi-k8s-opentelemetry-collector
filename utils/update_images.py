@@ -257,44 +257,6 @@ def update_chart_version(chart_file, app_version=None):
     
     return False
 
-def create_pr(changes, github_token, repository, chart_updated=False):
-    """Create a PR with the image updates"""
-    branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    
-    try:
-        subprocess.run(["git", "checkout", "-b", branch_name], check=True)
-        subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
-        
-        if chart_updated:
-            subprocess.run(["git", "add", "deploy/helm/Chart.yaml"], check=True)
-        
-        commit_msg = "Update Docker image versions\n\n"
-        for change in changes:
-            commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
-        
-        with open("commit_msg.txt", "w") as f:
-            f.write(commit_msg)
-        
-        subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
-        os.remove("commit_msg.txt")
-        
-        subprocess.run(["git", "push", "origin", branch_name], check=True)
-        
-        g = Github(github_token)
-        repo = g.get_repo(repository)
-        
-        pr = repo.create_pull(
-            title="Update Docker image versions",
-            body=commit_msg,
-            head=branch_name,
-            base="master"
-        )
-        
-        logger.info(f"Created PR #{pr.number}: {pr.html_url}")
-        
-    except Exception as e:
-        logger.error(f"Error creating PR: {str(e)}")
-
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
     parser.add_argument("--create-pr", action="store_true", help="Create a PR with the changes")
@@ -364,12 +326,7 @@ def main():
         chart_updated = False
         if args.update_chart:
             chart_updated = update_chart_version(args.chart_file, app_version)
-        
-        if args.create_pr and applied_changes:
-            if args.github_token:
-                create_pr(applied_changes, args.github_token, args.repository, chart_updated)
-            else:
-                logger.error("GitHub token is required to create a PR")
+    
     elif not changes:
         logger.info("No updates needed.")
 

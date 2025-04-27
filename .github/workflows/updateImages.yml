@@ -11,29 +11,43 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v4
-        with:
+        with: 
           python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruamel.yaml requests PyGithub packaging
 
-      
-      - name: Configure Git
-        run: |
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-      
-      - name: Run update-images script
-        run: |
-          python utils/update_images.py --create-pr --github-token ${{ secrets.GITHUB_TOKEN }}
+      - name: Install deps
+        run: pip install ruamel.yaml requests packaging
+
+      - name: Run updater (no commit)
+        run: python utils/update_images.py --create-pr=false --dry-run=false
+
+      - name: Create API-signed commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/main -q .object.sha)
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/heads/update-images-${{ github.run_id }}" \
+            -f sha="$BASE_SHA"
+
+          FILE=deploy/helm/values.yaml
+          FILE_SHA=$(gh api repos/${{ github.repository }}/contents/$FILE?ref=main -q .sha)
+          CONTENT=$(base64 -w0 $FILE)
+          gh api repos/${{ github.repository }}/contents/$FILE \
+            --method PUT \
+            -f branch="update-images-${{ github.run_id }}" \
+            -f message="chore: update Docker image versions" \
+            -f content="$CONTENT" \
+            -f sha="$FILE_SHA"
+
+      - name: Create Pull Request
+        run: gh pr create \
+          --title "Update Docker image versions" \
+          --body "Automated image updates via API-signed commit." \
+          --head update-images-${{ github.run_id }} \
+          --base main
