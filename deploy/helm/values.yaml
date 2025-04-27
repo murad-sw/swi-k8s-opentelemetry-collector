@@ -162,7 +162,7 @@ otel:
           metrics:
             enabled: true
             address: 0.0.0.0:8888
-            
+
         # Memory limiter configuration. The memory limiter is used to prevent out of memory situations on the collector.
         # see https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/memorylimiterprocessor for configuration reference
         memory_limiter:
@@ -327,7 +327,6 @@ otel:
         #   - 10.240.0.33:2379
         #   - 10.240.0.34:2379
         static_endpoints: []
-      
 
     # This filter is applied after metric processing, it is the place where metrics could be filtered out
     # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor for configuration reference
@@ -726,7 +725,7 @@ otel:
     enabled: true
 
     # Persistend storage for k8sobjects receiver
-    persistent_storage: 
+    persistent_storage:
       enabled: false
       # Storage class for the PVC
       storageClassName: ""
@@ -773,7 +772,7 @@ autoupdate:
 
   image:
     repository: "alpine/k8s"
-    tag: "1.27.16"
+    tag: "1.33.0"
     pullPolicy: IfNotPresent
 
 # Set labels to every deployed resource
@@ -797,7 +796,7 @@ swoagent:
   enabled: false
   image:
     repository: solarwinds/swo-agent
-    tag: "v2.10.156"
+    tag: "v2.10.190"
     pullPolicy: IfNotPresent
   resources:
     limits:
@@ -1005,7 +1004,7 @@ operator:
       # Currently only Java and Python supported, other languages are TBD
       java:
         repository: "solarwinds/autoinstrumentation-java"
-        tag: "2.13.0"
+        tag: "2.15.0"
       nodejs:
         repository: ""
         tag: ""
@@ -1042,7 +1041,7 @@ waitJobs:
 
     image:
       repository: "alpine/k8s"
-      tag: "1.27.16"
+      tag: "1.33.0"
       pullPolicy: IfNotPresent
 
   # is valid only if `certmanager.enable=true`, otherwise is ignored
@@ -1051,15 +1050,15 @@ waitJobs:
 
     image:
       repository: "alpine/k8s"
-      tag: "1.27.16"
+      tag: "1.33.0"
       pullPolicy: IfNotPresent
-  
+
 beyla:
   enabled: false
 
   image:
     repository: "grafana/beyla"
-    tag: "2.0.3"
+    tag: "2.1.0"
     pullPolicy: IfNotPresent
 
   resources:
