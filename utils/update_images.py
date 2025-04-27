@@ -37,6 +37,31 @@ def get_docker_hub_tags(repository, version_pattern=None):
     
     return all_tags
 
+def get_ghcr_tags(repository, version_pattern=None, github_token=None):
+    """
+    Get tags from ghcr.io using Docker Registry HTTP API v2
+    """
+    tags = []
+    headers = {}
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+    
+    url = f"https://ghcr.io/v2/{repository}/tags/list"
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        tags = data.get("tags", [])
+        
+        if version_pattern:
+            tags = [tag for tag in tags if re.match(version_pattern, tag)]
+        
+    except Exception as e:
+        logger.error(f"Error fetching GHCR tags for {repository}: {str(e)}")
+    
+    return tags
+
 def get_latest_version(tags):
     """Find the latest semantic version from a list of tags"""
     if not tags:
@@ -59,10 +84,13 @@ def get_latest_version(tags):
     version_tags.sort(reverse=True)
     return version_tags[0][1]
 
-def get_latest_tag(registry, repository, version_pattern=None):
+def get_latest_tag(registry, repository, version_pattern=None, github_token=None):
     """Get the latest tag for an image"""
     if registry == "docker.io":
         tags = get_docker_hub_tags(repository, version_pattern)
+        return get_latest_version(tags)
+    elif registry == "ghcr.io":
+        tags = get_ghcr_tags(repository, version_pattern, github_token)
         return get_latest_version(tags)
     
     logger.warning(f"Unsupported registry: {registry}")
@@ -94,7 +122,7 @@ def detect_images_in_yaml(yaml_data, path=None):
                 
             name = repository.split("/")[-1].title()
             if path:
-                name = f"{'.'.join(path)} ({name})"
+                name = f"{'.'.join(path)}"
             
             current_tag = yaml_data.get("tag", "")
             version_pattern = None
@@ -198,45 +226,87 @@ def update_chart_version(chart_file, app_version=None):
     
     return False
 
-def create_pr(changes, github_token, repository, chart_updated=False):
-    """Create a PR with the image updates"""
-    branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    
+def create_verified_commit(changes, github_token, repository, repo_name, branch_name, files_to_commit):
+    """Create a verified commit through the GitHub API"""
     try:
-        subprocess.run(["git", "checkout", "-b", branch_name], check=True)
-        subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
+        g = Github(github_token)
+        repo = g.get_repo(repo_name)
         
-        if chart_updated:
-            subprocess.run(["git", "add", "deploy/helm/Chart.yaml"], check=True)
+        # Get the current master branch SHA
+        master_branch = repo.get_branch("master")
+        base_sha = master_branch.commit.sha
         
+        # Create a new branch
+        try:
+            repo.create_git_ref(f"refs/heads/{branch_name}", base_sha)
+            logger.info(f"Created branch: {branch_name}")
+        except Exception as e:
+            logger.error(f"Error creating branch: {str(e)}")
+            return False
+        
+        # Get the current file contents for each file
+        file_blobs = {}
+        for file_path in files_to_commit:
+            try:
+                file_content = repo.get_contents(file_path, ref=branch_name)
+                file_blobs[file_path] = file_content
+            except Exception as e:
+                logger.error(f"Error getting file content for {file_path}: {str(e)}")
+                return False
+        
+        # Read the local file contents
+        local_contents = {}
+        for file_path in files_to_commit:
+            with open(file_path, 'r') as f:
+                local_contents[file_path] = f.read()
+        
+        # Prepare the commit message
         commit_msg = "Update Docker image versions\n\n"
         for change in changes:
             commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
         
-        with open("commit_msg.txt", "w") as f:
-            f.write(commit_msg)
+        # Create a commit with all changes
+        commit_files = []
+        for file_path in files_to_commit:
+            commit_files.append({
+                'path': file_path,
+                'mode': '100644',
+                'type': 'blob',
+                'content': local_contents[file_path]
+            })
         
-        subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
-        os.remove("commit_msg.txt")
+        # Get the latest commit on the branch to use as parent
+        branch_ref = repo.get_git_ref(f"heads/{branch_name}")
+        latest_commit = repo.get_git_commit(branch_ref.object.sha)
         
-        subprocess.run(["git", "push", "origin", branch_name], check=True)
+        # Create tree
+        tree = repo.create_git_tree(commit_files, base_tree=latest_commit.tree)
         
-        g = Github(github_token)
-        repo = g.get_repo(repository)
+        # Create commit
+        commit = repo.create_git_commit(commit_msg, tree, [latest_commit])
         
-        labels = ["docker", "dependencies"]
+        # Update branch reference
+        branch_ref.edit(commit.sha)
+        
+        logger.info(f"Created verified commit: {commit.sha}")
+        
+        # Create a pull request
         pr = repo.create_pull(
             title="Update Docker image versions",
             body=commit_msg,
             head=branch_name,
             base="master"
         )
-        pr.add_to_labels(*labels)
+        
+        # Add labels to the PR
+        pr.add_to_labels("docker", "dependencies")
         
         logger.info(f"Created PR #{pr.number}: {pr.html_url}")
+        return True
         
     except Exception as e:
-        logger.error(f"Error creating PR: {str(e)}")
+        logger.error(f"Error creating verified commit: {str(e)}")
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
@@ -280,7 +350,7 @@ def main():
             logger.info(f"  Skipping {name}, no current tag")
             continue
         
-        latest_tag = get_latest_tag(registry, repository, version_pattern)
+        latest_tag = get_latest_tag(registry, repository, version_pattern, args.github_token)
         if not latest_tag:
             logger.warning(f"  Skipping {name}, couldn't determine latest tag")
             continue
@@ -310,7 +380,23 @@ def main():
         
         if args.create_pr and applied_changes:
             if args.github_token:
-                create_pr(applied_changes, args.github_token, args.repository, chart_updated)
+                # Prepare a list of files to commit
+                files_to_commit = [args.values_file]
+                if chart_updated:
+                    files_to_commit.append(args.chart_file)
+                
+                # Create a branch name
+                branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                
+                # Create a verified commit through the GitHub API
+                create_verified_commit(
+                    applied_changes, 
+                    args.github_token, 
+                    args.repository,
+                    args.repository,
+                    branch_name,
+                    files_to_commit
+                )
             else:
                 logger.error("GitHub token is required to create a PR")
     elif not changes:
