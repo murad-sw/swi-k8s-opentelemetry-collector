@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import re
-import sys
 import requests
 import argparse
 import subprocess
@@ -15,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("image-updater")
 
 def get_docker_hub_tags(repository, version_pattern=None):
-    """Get all tags for a Docker Hub repository with pagination"""
+    """Get all tags for a Docker Hub repository"""
     all_tags = []
     
     if "/" not in repository:
@@ -45,9 +44,7 @@ def get_docker_hub_tags(repository, version_pattern=None):
     return all_tags
 
 def get_ghcr_tags(repository, version_pattern=None, github_token=None):
-    """
-    Get tags from ghcr.io using Docker Registry HTTP API v2
-    """
+    """Get tags from ghcr.io using Docker Registry HTTP API v2"""
     tags = []
     headers = {}
     if github_token:
@@ -187,7 +184,7 @@ def detect_images_in_yaml(yaml_data, path=None):
     return found_images
 
 def update_yaml_file(file_path, changes):
-    """Update the YAML file with new image tags, preserving comments and structure"""
+    """Update the YAML file with new image tags"""
     yaml = YAML()
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)

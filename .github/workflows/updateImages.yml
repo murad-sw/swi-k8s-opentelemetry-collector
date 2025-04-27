@@ -34,6 +34,6 @@ jobs:
       
       - name: Run update-images script
         run: |
-          python utils/update_images.py --create-pr --update-chart --github-token ${{ secrets.GITHUB_TOKEN }}
+          python utils/update_images.py --create-pr --github-token ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
