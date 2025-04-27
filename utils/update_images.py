@@ -226,87 +226,45 @@ def update_chart_version(chart_file, app_version=None):
     
     return False
 
-def create_verified_commit(changes, github_token, repository, repo_name, branch_name, files_to_commit):
-    """Create a verified commit through the GitHub API"""
+def create_pr(changes, github_token, repository, chart_updated=False):
+    """Create a PR with the image updates"""
+    branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    
     try:
-        g = Github(github_token)
-        repo = g.get_repo(repo_name)
+        subprocess.run(["git", "checkout", "-b", branch_name], check=True)
+        subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
         
-        # Get the current master branch SHA
-        master_branch = repo.get_branch("master")
-        base_sha = master_branch.commit.sha
+        if chart_updated:
+            subprocess.run(["git", "add", "deploy/helm/Chart.yaml"], check=True)
         
-        # Create a new branch
-        try:
-            repo.create_git_ref(f"refs/heads/{branch_name}", base_sha)
-            logger.info(f"Created branch: {branch_name}")
-        except Exception as e:
-            logger.error(f"Error creating branch: {str(e)}")
-            return False
-        
-        # Get the current file contents for each file
-        file_blobs = {}
-        for file_path in files_to_commit:
-            try:
-                file_content = repo.get_contents(file_path, ref=branch_name)
-                file_blobs[file_path] = file_content
-            except Exception as e:
-                logger.error(f"Error getting file content for {file_path}: {str(e)}")
-                return False
-        
-        # Read the local file contents
-        local_contents = {}
-        for file_path in files_to_commit:
-            with open(file_path, 'r') as f:
-                local_contents[file_path] = f.read()
-        
-        # Prepare the commit message
         commit_msg = "Update Docker image versions\n\n"
         for change in changes:
             commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
         
-        # Create a commit with all changes
-        commit_files = []
-        for file_path in files_to_commit:
-            commit_files.append({
-                'path': file_path,
-                'mode': '100644',
-                'type': 'blob',
-                'content': local_contents[file_path]
-            })
+        with open("commit_msg.txt", "w") as f:
+            f.write(commit_msg)
         
-        # Get the latest commit on the branch to use as parent
-        branch_ref = repo.get_git_ref(f"heads/{branch_name}")
-        latest_commit = repo.get_git_commit(branch_ref.object.sha)
+        subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
+        os.remove("commit_msg.txt")
         
-        # Create tree
-        tree = repo.create_git_tree(commit_files, base_tree=latest_commit.tree)
+        subprocess.run(["git", "push", "origin", branch_name], check=True)
         
-        # Create commit
-        commit = repo.create_git_commit(commit_msg, tree, [latest_commit])
+        g = Github(github_token)
+        repo = g.get_repo(repository)
         
-        # Update branch reference
-        branch_ref.edit(commit.sha)
-        
-        logger.info(f"Created verified commit: {commit.sha}")
-        
-        # Create a pull request
+        labels = ["docker", "dependencies"]
         pr = repo.create_pull(
             title="Update Docker image versions",
             body=commit_msg,
             head=branch_name,
             base="master"
         )
-        
-        # Add labels to the PR
-        pr.add_to_labels("docker", "dependencies")
+        pr.add_to_labels(*labels)
         
         logger.info(f"Created PR #{pr.number}: {pr.html_url}")
-        return True
         
     except Exception as e:
-        logger.error(f"Error creating verified commit: {str(e)}")
-        return False
+        logger.error(f"Error creating PR: {str(e)}")
 
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
@@ -380,23 +338,7 @@ def main():
         
         if args.create_pr and applied_changes:
             if args.github_token:
-                # Prepare a list of files to commit
-                files_to_commit = [args.values_file]
-                if chart_updated:
-                    files_to_commit.append(args.chart_file)
-                
-                # Create a branch name
-                branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-                
-                # Create a verified commit through the GitHub API
-                create_verified_commit(
-                    applied_changes, 
-                    args.github_token, 
-                    args.repository,
-                    args.repository,
-                    branch_name,
-                    files_to_commit
-                )
+                create_pr(applied_changes, args.github_token, args.repository, chart_updated)
             else:
                 logger.error("GitHub token is required to create a PR")
     elif not changes:
