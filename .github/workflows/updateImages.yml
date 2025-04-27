@@ -24,7 +24,7 @@ jobs:
         run: pip install ruamel.yaml requests packaging
 
       - name: Run updater (no commit)
-        run: python utils/update_images.py --create-pr=false --dry-run=false
+        run: python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create API-signed commit
         env:

@@ -255,9 +255,8 @@ def update_chart_version(chart_file, app_version=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
-    parser.add_argument("--create-pr", action="store_true", help="Create a PR with the changes")
     parser.add_argument("--dry-run", action="store_true", help="Only print what would be updated")
-    parser.add_argument("--github-token", help="GitHub token for creating PRs")
+    parser.add_argument("--github-token", help="GitHub token for fetching tags")
     parser.add_argument("--repository", default="murad-sw/swi-k8s-opentelemetry-collector", help="GitHub repository")
     parser.add_argument("--update-chart", action="store_true", help="Update Chart.yaml version")
     parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
