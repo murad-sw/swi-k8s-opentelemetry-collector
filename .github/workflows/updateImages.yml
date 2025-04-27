@@ -46,6 +46,8 @@ jobs:
             -f sha="$FILE_SHA"
 
       - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr create \
             --title "Update Docker image versions" \
