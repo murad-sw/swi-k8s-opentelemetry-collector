@@ -220,17 +220,18 @@ def update_chart_version(chart_file, app_version=None):
                 yaml.dump(chart_data, f)
             
             logger.info(f"Updated Chart.yaml: version {chart_version} -> {new_chart_version}")
-            return True
+            return new_chart_version
     except Exception as e:
         logger.error(f"Error updating Chart.yaml: {str(e)}")
     
-    return False
+    return None
 
-def create_pr(changes, github_token, repository, chart_updated=False):
-    """Create a PR with the image updates"""
+def chart_release(changes, github_token, repository, chart_updated=False, new_chart_version=None):
+    """Create a PR with the image updates using the chart release script for verified commits"""
     branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     
     try:
+        # First, create a branch and commit the changes
         subprocess.run(["git", "checkout", "-b", branch_name], check=True)
         subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
         
@@ -247,8 +248,26 @@ def create_pr(changes, github_token, repository, chart_updated=False):
         subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
         os.remove("commit_msg.txt")
         
+        # Push the branch
         subprocess.run(["git", "push", "origin", branch_name], check=True)
         
+        # If chart was updated, use the chart release script
+        if chart_updated and new_chart_version:
+            release_name = f"swo-k8s-collector-{new_chart_version}"
+            logger.info(f"Running chart release script for {release_name}...")
+            
+            # Set the necessary environment variables for the chart release script
+            env = os.environ.copy()
+            env["GITHUB_TOKEN"] = github_token
+            
+            # Run the chart release script
+            try:
+                subprocess.run(["bash", ".github/cr.sh"], check=True, env=env)
+                logger.info(f"Chart release script completed successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Error running chart release script: {str(e)}")
+        
+        # Create a PR with the GitHub API
         g = Github(github_token)
         repo = g.get_repo(repository)
         
@@ -276,6 +295,7 @@ def main():
     parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
     parser.add_argument("--chart-file", default="deploy/helm/Chart.yaml", help="Path to Chart.yaml")
     parser.add_argument("--filter", help="Only update images containing this string in repository")
+    parser.add_argument("--verified", action="store_true", help="Use chart release script for verified commits")
     args = parser.parse_args()
     
     yaml = YAML()
@@ -333,16 +353,62 @@ def main():
         logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
         
         chart_updated = False
+        new_chart_version = None
         if args.update_chart:
-            chart_updated = update_chart_version(args.chart_file, app_version)
+            new_chart_version = update_chart_version(args.chart_file, app_version)
+            chart_updated = (new_chart_version is not None)
         
         if args.create_pr and applied_changes:
             if args.github_token:
-                create_pr(applied_changes, args.github_token, args.repository, chart_updated)
+                if args.verified:
+                    chart_release(applied_changes, args.github_token, args.repository, chart_updated, new_chart_version)
+                else:
+                    # Original PR creation function
+                    create_pr(applied_changes, args.github_token, args.repository, chart_updated)
             else:
                 logger.error("GitHub token is required to create a PR")
     elif not changes:
         logger.info("No updates needed.")
+
+def create_pr(changes, github_token, repository, chart_updated=False):
+    """Original PR creation function (kept for backward compatibility)"""
+    branch_name = f"update-images-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    
+    try:
+        subprocess.run(["git", "checkout", "-b", branch_name], check=True)
+        subprocess.run(["git", "add", "deploy/helm/values.yaml"], check=True)
+        
+        if chart_updated:
+            subprocess.run(["git", "add", "deploy/helm/Chart.yaml"], check=True)
+        
+        commit_msg = "Update Docker image versions\n\n"
+        for change in changes:
+            commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
+        
+        with open("commit_msg.txt", "w") as f:
+            f.write(commit_msg)
+        
+        subprocess.run(["git", "commit", "-F", "commit_msg.txt"], check=True)
+        os.remove("commit_msg.txt")
+        
+        subprocess.run(["git", "push", "origin", branch_name], check=True)
+        
+        g = Github(github_token)
+        repo = g.get_repo(repository)
+        
+        labels = ["docker", "dependencies"]
+        pr = repo.create_pull(
+            title="Update Docker image versions",
+            body=commit_msg,
+            head=branch_name,
+            base="master"
+        )
+        pr.add_to_labels(*labels)
+        
+        logger.info(f"Created PR #{pr.number}: {pr.html_url}")
+        
+    except Exception as e:
+        logger.error(f"Error creating PR: {str(e)}")
 
 if __name__ == "__main__":
     main()
