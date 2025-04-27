@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-import os
 import re
 import requests
 import argparse
-import subprocess
 import logging
-from datetime import datetime
 from packaging import version
-from github import Github
 from ruamel.yaml import YAML
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
