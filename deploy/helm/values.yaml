@@ -992,7 +992,7 @@ operator:
   manager:
     image:
       repository: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
-      tag: "v0.124.0"
+      tag: "v0.125.0"
     targetAllocatorImage:
       repository: ""
       tag: ""
@@ -1058,7 +1058,7 @@ beyla:
 
   image:
     repository: "grafana/beyla"
-    tag: "2.2.1"
+    tag: "2.2.3"
     pullPolicy: IfNotPresent
 
   resources:
