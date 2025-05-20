@@ -35,7 +35,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          EXISTING_PR=$(gh pr list --state open --head update-images-${{ github.run_id }} --json number -q '.[0].number')
+          EXISTING_PR=$(gh pr list --state open --head update-images --json number -q '.[0].number')
           echo "EXISTING_PR=$EXISTING_PR" >> $GITHUB_ENV
 
       - name: Update existing PR
@@ -52,15 +52,15 @@ jobs:
         run: |
           BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
           gh api repos/${{ github.repository }}/git/refs \
-            -f ref="refs/heads/update-images-${{ github.run_id }}" \
-            -f sha="$BASE_SHA"
+            -f ref="refs/heads/update-images" \
+            -f sha="$BASE_SHA" || echo "Branch already exists"
 
           FILE=deploy/helm/values.yaml
           FILE_SHA=$(gh api repos/${{ github.repository }}/contents/$FILE?ref=master -q .sha)
           CONTENT=$(base64 -w0 $FILE)
           gh api repos/${{ github.repository }}/contents/$FILE \
             --method PUT \
-            -f branch="update-images-${{ github.run_id }}" \
+            -f branch="update-images" \
             -f message="chore: update Docker image versions" \
             -f content="$CONTENT" \
             -f sha="$FILE_SHA"
@@ -74,7 +74,7 @@ jobs:
           gh pr create \
             --title "Update Docker image versions" \
             --body "Automated image updates via API-signed commit.\n\nChanged images:\n$CHANGES" \
-            --head update-images-${{ github.run_id }} \
+            --head update-images \
             --base master
       - name: Clean up changes.log
         if: success()
