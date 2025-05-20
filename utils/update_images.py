@@ -6,6 +6,7 @@ import logging
 from packaging import version
 from ruamel.yaml import YAML
 from github import Github
+from urllib.parse import urlparse
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -25,7 +26,7 @@ def get_docker_hub_tags(repository, version_pattern=None):
     
     while next_url:
         try:
-            response = requests.get(next_url)
+            response = requests.get(next_url, timeout=10)
             response.raise_for_status()
             data = response.json()
             
@@ -51,7 +52,7 @@ def get_ghcr_tags(repository, version_pattern=None, github_token=None):
     url = f"https://ghcr.io/v2/{repository}/tags/list"
 
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
         tags = data.get("tags", [])
@@ -92,8 +93,9 @@ def get_latest_tag(registry, repository, version_pattern=None, github_token=None
         tags = get_docker_hub_tags(repository, version_pattern)
         return get_latest_version(tags)
     elif registry == "ghcr.io":
-        if repository.startswith("ghcr.io/"):
-            repo_name = repository[8:]
+        parsed_url = urlparse(repository)
+        if parsed_url.hostname == "ghcr.io":
+            repo_name = parsed_url.path.lstrip("/")
         else:
             repo_name = repository
             
@@ -197,14 +199,12 @@ def update_yaml_file(file_path, changes):
         
         current = data
         for part in path[:-1]:
-            if part not in current:
-                logger.warning(f"Path {path} not found in YAML")
-                break
             current = current[part]
         
-        if path[-1] in current and "tag" in current[path[-1]]:
-            old_tag = current[path[-1]]["tag"]
-            current[path[-1]]["tag"] = new_tag
+        last_key = path[-1]
+        if last_key in current and "tag" in current[last_key]:
+            old_tag = current[last_key]["tag"]
+            current[last_key]["tag"] = new_tag
             applied_changes.append({
                 "name": change["name"],
                 "old_tag": old_tag,
@@ -248,39 +248,36 @@ def update_chart_version(chart_file, app_version=None):
                 yaml.dump(chart_data, f)
             
             logger.info(f"Updated Chart.yaml: version {chart_version} -> {new_chart_version}")
-            return True
     except Exception as e:
         logger.error(f"Error updating Chart.yaml: {str(e)}")
     
-    return False
-
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
     parser.add_argument("--dry-run", action="store_true", help="Only print what would be updated")
     parser.add_argument("--github-token", help="GitHub token for fetching tags")
-    parser.add_argument("--repository", default="murad-sw/swi-k8s-opentelemetry-collector", help="GitHub repository")
+    parser.add_argument("--repository", default="solarwinds/swi-k8s-opentelemetry-collector", help="GitHub repository")
     parser.add_argument("--update-chart", action="store_true", help="Update Chart.yaml version")
     parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
     parser.add_argument("--chart-file", default="deploy/helm/Chart.yaml", help="Path to Chart.yaml")
     parser.add_argument("--filter", help="Only update images containing this string in repository")
     args = parser.parse_args()
-    
+
     yaml = YAML()
     yaml.preserve_quotes = True
     with open(args.values_file, 'r') as f:
         values = yaml.load(f)
-    
+
     logger.info(f"Detecting images in {args.values_file}...")
     detected_images = detect_images_in_yaml(values)
     logger.info(f"Found {len(detected_images)} images")
-    
+
     if args.filter:
         detected_images = [img for img in detected_images if args.filter in img["repository"]]
         logger.info(f"After filtering: {len(detected_images)} images")
-    
+
     changes = []
     app_version = None
-    
+
     for image in detected_images:
         name = image["name"]
         registry = image["registry"]
@@ -288,21 +285,21 @@ def main():
         yaml_path = image["yaml_path"]
         version_pattern = image["version_pattern"]
         current_tag = image["current_tag"]
-        
+
         logger.info(f"Checking for updates to {name} ({repository})...")
-        
+
         if not current_tag:
             logger.info(f"  Skipping {name}, no current tag")
             continue
-        
+
         latest_tag = get_latest_tag(registry, repository, version_pattern, args.github_token)
         if not latest_tag:
             logger.warning(f"  Skipping {name}, couldn't determine latest tag")
             continue
-        
+
         if repository == "solarwinds/solarwinds-otel-collector" and yaml_path == ["otel", "image"]:
             app_version = latest_tag
-        
+
         if current_tag == latest_tag:
             logger.info(f"  Latest version already in use: {current_tag}")
             continue
@@ -314,17 +311,25 @@ def main():
                 "old_tag": current_tag,
                 "new_tag": latest_tag
             })
-    
-    if changes and not args.dry_run:
-        applied_changes = update_yaml_file(args.values_file, changes)
-        logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
-        
-        chart_updated = False
-        if args.update_chart:
-            chart_updated = update_chart_version(args.chart_file, app_version)
-    
-    elif not changes:
+
+    if changes:
+        if args.dry_run:
+            logger.info("Dry run mode: Listing changes only")
+            for change in changes:
+                print(f"{change['name']}: {change['old_tag']} -> {change['new_tag']}")
+        else:
+            applied_changes = update_yaml_file(args.values_file, changes)
+            logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
+
+            if args.update_chart:
+                update_chart_version(args.chart_file, app_version)
+
+        with open("changes.log", "w") as log_file:
+            for change in changes:
+                log_file.write(f"{change['name']}: {change['old_tag']} -> {change['new_tag']}\n")
+    else:
         logger.info("No updates needed.")
+        exit(1)
 
 if __name__ == "__main__":
     main()
