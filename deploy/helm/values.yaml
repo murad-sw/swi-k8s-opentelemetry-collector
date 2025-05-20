@@ -944,7 +944,7 @@ ebpfNetworkMonitoring:
     relay:
       image:
         repository: "solarwinds/opentelemetry-ebpf-k8s-relay"
-        tag: "v0.10.3"
+        tag: "v0.8.0"
         pullPolicy: IfNotPresent
   reducer:
     disableMetrics: []
@@ -992,7 +992,7 @@ operator:
   manager:
     image:
       repository: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
-      tag: "v0.125.0"
+      tag: "v0.121.0"
     targetAllocatorImage:
       repository: ""
       tag: ""
@@ -1010,7 +1010,7 @@ operator:
         tag: ""
       python:
         repository: "solarwinds/autoinstrumentation-python"
-        tag: "4.0.0"
+        tag: "3.0.0"
       dotnet:
         repository: ""
         tag: ""

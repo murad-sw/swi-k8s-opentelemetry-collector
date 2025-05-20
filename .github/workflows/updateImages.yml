@@ -43,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr edit $EXISTING_PR --add-label "updated" --body "Updated with new changes."
+          gh pr edit $EXISTING_PR --body "Updated with new changes."
 
       - name: Create API-signed commit
         if: ${{ env.EXISTING_PR == '' }}
