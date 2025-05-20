@@ -46,7 +46,7 @@ jobs:
           gh pr edit $EXISTING_PR --add-label "updated" --body "Updated with new changes."
 
       - name: Create API-signed commit
-        if: !env.EXISTING_PR
+        if: ${{ env.EXISTING_PR == '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -66,7 +66,7 @@ jobs:
             -f sha="$FILE_SHA"
 
       - name: Create Pull Request
-        if: !env.EXISTING_PR
+        if: ${{ env.EXISTING_PR == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
