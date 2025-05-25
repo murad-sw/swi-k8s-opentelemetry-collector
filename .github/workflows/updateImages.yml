@@ -43,7 +43,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr edit $EXISTING_PR --body "Updated with new changes."
+          CHANGES=$(cat changes.log)
+          gh pr edit $EXISTING_PR --body "Automated image updates via API-signed commit.\n\nChanged images:\n$CHANGES" \
 
       - name: Create API-signed commit
         if: ${{ env.EXISTING_PR == '' }}
