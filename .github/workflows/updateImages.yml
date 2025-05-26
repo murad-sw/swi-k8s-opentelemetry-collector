@@ -23,14 +23,6 @@ jobs:
       - name: Install deps
         run: pip install ruamel.yaml requests packaging PyGithub
 
-      - name: Run updater
-        run: |
-          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }} --update-chart
-          if [ $? -ne 0 ]; then
-            echo "No changes detected. Exiting."
-            exit 0
-          fi
-
       - name: Check for existing PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,28 +40,28 @@ jobs:
             gh api repos/${{ github.repository }}/git/refs \
               -f ref="refs/heads/update-images" \
               -f sha="$BASE_SHA" || echo "Branch already exists"
+            git fetch origin update-images
+            git checkout update-images
           else
             # Checkout the existing PR branch if it exists
             git fetch origin update-images
+            git checkout -b temp-branch
+            # Run updates on temp branch
             git checkout update-images
+          fi
+
+      - name: Run updater
+        run: |
+          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }} --update-chart
+          if [ $? -ne 0 ]; then
+            echo "No changes detected. Exiting."
+            exit 0
           fi
 
       - name: Commit changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Copy the updated files to the root
-          cp deploy/helm/values.yaml ./values.yaml
-          cp deploy/helm/Chart.yaml ./Chart.yaml
-          
-          # Switch to update-images branch
-          git checkout update-images || git checkout -b update-images
-          
-          # Copy back the updated files
-          cp ./values.yaml deploy/helm/values.yaml
-          cp ./Chart.yaml deploy/helm/Chart.yaml
-          
-          # Commit changes
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add deploy/helm/values.yaml deploy/helm/Chart.yaml
@@ -82,7 +74,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CHANGES=$(cat changes.log)
-          gh pr edit ${{ env.EXISTING_PR }} --body "Automated image updates.\n\nChanged images:\n$CHANGES"
+          gh pr edit ${{ env.EXISTING_PR }} --body "$CHANGES"
 
       - name: Create Pull Request
         if: env.EXISTING_PR == ''
@@ -92,10 +84,10 @@ jobs:
           CHANGES=$(cat changes.log)
           gh pr create \
             --title "Update Docker image versions" \
-            --body "Automated image updates.\n\nChanged images:\n$CHANGES" \
+            --body "$CHANGES" \
             --head update-images \
             --base master
 
       - name: Clean up changes.log
         if: success()
-        run: rm changes.log
+        run: rm changes.log || true
