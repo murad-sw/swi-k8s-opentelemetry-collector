@@ -74,7 +74,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CHANGES=$(cat changes.log)
-          gh pr edit ${{ env.EXISTING_PR }} --body "$CHANGES"
+          EXISTING_BODY=$(gh pr view ${{ env.EXISTING_PR }} --json body -q .body)
+          NEW_BODY="$EXISTING_BODY
+          $CHANGES"
+          gh pr edit ${{ env.EXISTING_PR }} --body "$NEW_BODY"
 
       - name: Create Pull Request
         if: env.EXISTING_PR == ''

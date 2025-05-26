@@ -332,7 +332,7 @@ def main():
                 log_file.write(f"{change['name']}: {change['old_tag']} -> {change['new_tag']}\n")
     else:
         logger.info("No updates needed.")
-        exit(1)
+        exit(0)
 
 if __name__ == "__main__":
     main()
