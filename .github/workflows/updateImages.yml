@@ -39,34 +39,48 @@ jobs:
             BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
             gh api repos/${{ github.repository }}/git/refs \
               -f ref="refs/heads/update-images" \
-              -f sha="$BASE_SHA" || echo "Branch already exists"
-            git fetch origin update-images
-            git checkout update-images
-          else
-            # Checkout the existing PR branch if it exists
-            git fetch origin update-images
-            git checkout -b temp-branch
-            # Run updates on temp branch
-            git checkout update-images
+              -f sha="$BASE_SHA"
           fi
+          git fetch origin update-images
+          git checkout update-images
 
       - name: Run updater
         run: |
           python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }} --update-chart
           if [ $? -ne 0 ]; then
-            echo "No changes detected. Exiting."
+            echo "No changes detected."
             exit 0
           fi
 
-      - name: Commit changes
+      - name: Create API-signed commits
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add deploy/helm/values.yaml deploy/helm/Chart.yaml
-          git commit -m "chore: update Docker image versions" || echo "No changes to commit"
-          git push -f origin update-images
+          # Get SHA of the values.yaml file
+          VALUES_PATH="deploy/helm/values.yaml"
+          VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref=update-images -q .sha)
+          
+          # Get SHA of the Chart.yaml file
+          CHART_PATH="deploy/helm/Chart.yaml"
+          CHART_SHA=$(gh api repos/${{ github.repository }}/contents/$CHART_PATH?ref=update-images -q .sha)
+          
+          # Create commit for values.yaml
+          VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
+          gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
+            --method PUT \
+            -f message="chore: update Docker image versions" \
+            -f content="$VALUES_CONTENT" \
+            -f sha="$VALUES_SHA" \
+            -f branch="update-images"
+          
+          # Create commit for Chart.yaml
+          CHART_CONTENT=$(base64 -w0 $CHART_PATH)
+          gh api repos/${{ github.repository }}/contents/$CHART_PATH \
+            --method PUT \
+            -f message="chore: update Helm chart version" \
+            -f content="$CHART_CONTENT" \
+            -f sha="$CHART_SHA" \
+            -f branch="update-images"
 
       - name: Update existing PR
         if: env.EXISTING_PR != ''
