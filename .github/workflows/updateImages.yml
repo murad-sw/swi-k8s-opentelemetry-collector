@@ -46,7 +46,7 @@ jobs:
 
       - name: Run updater
         run: |
-          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }} --update-chart
+          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
           if [ $? -ne 0 ]; then
             echo "No changes detected."
             exit 0
@@ -60,10 +60,6 @@ jobs:
           VALUES_PATH="deploy/helm/values.yaml"
           VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref=update-images -q .sha)
           
-          # Get SHA of the Chart.yaml file
-          CHART_PATH="deploy/helm/Chart.yaml"
-          CHART_SHA=$(gh api repos/${{ github.repository }}/contents/$CHART_PATH?ref=update-images -q .sha)
-          
           # Create commit for values.yaml
           VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
           gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
@@ -71,15 +67,6 @@ jobs:
             -f message="chore: update Docker image versions" \
             -f content="$VALUES_CONTENT" \
             -f sha="$VALUES_SHA" \
-            -f branch="update-images"
-          
-          # Create commit for Chart.yaml
-          CHART_CONTENT=$(base64 -w0 $CHART_PATH)
-          gh api repos/${{ github.repository }}/contents/$CHART_PATH \
-            --method PUT \
-            -f message="chore: update Helm chart version" \
-            -f content="$CHART_CONTENT" \
-            -f sha="$CHART_SHA" \
             -f branch="update-images"
 
       - name: Update existing PR
