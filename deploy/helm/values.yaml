@@ -1010,7 +1010,7 @@ operator:
         tag: ""
       python:
         repository: "solarwinds/autoinstrumentation-python"
-        tag: "4.1.0"
+        tag: "3.0.0"
       dotnet:
         repository: ""
         tag: ""
