@@ -38,45 +38,64 @@ jobs:
           EXISTING_PR=$(gh pr list --state open --head update-images --json number -q '.[0].number')
           echo "EXISTING_PR=$EXISTING_PR" >> $GITHUB_ENV
 
+      - name: Setup update branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "${{ env.EXISTING_PR }}" ]; then
+            # Create new branch if PR doesn't exist
+            BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
+            gh api repos/${{ github.repository }}/git/refs \
+              -f ref="refs/heads/update-images" \
+              -f sha="$BASE_SHA" || echo "Branch already exists"
+          else
+            # Checkout the existing PR branch if it exists
+            git fetch origin update-images
+            git checkout update-images
+          fi
+
+      - name: Commit changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Copy the updated files to the root
+          cp deploy/helm/values.yaml ./values.yaml
+          cp deploy/helm/Chart.yaml ./Chart.yaml
+          
+          # Switch to update-images branch
+          git checkout update-images || git checkout -b update-images
+          
+          # Copy back the updated files
+          cp ./values.yaml deploy/helm/values.yaml
+          cp ./Chart.yaml deploy/helm/Chart.yaml
+          
+          # Commit changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add deploy/helm/values.yaml deploy/helm/Chart.yaml
+          git commit -m "chore: update Docker image versions" || echo "No changes to commit"
+          git push -f origin update-images
+
       - name: Update existing PR
-        if: env.EXISTING_PR
+        if: env.EXISTING_PR != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CHANGES=$(cat changes.log)
-          gh pr edit $EXISTING_PR --body "Automated image updates via API-signed commit.\n\nChanged images:\n$CHANGES" \
-
-      - name: Create API-signed commit
-        if: ${{ env.EXISTING_PR == '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
-          gh api repos/${{ github.repository }}/git/refs \
-            -f ref="refs/heads/update-images" \
-            -f sha="$BASE_SHA" || echo "Branch already exists"
-
-          FILE=deploy/helm/values.yaml
-          FILE_SHA=$(gh api repos/${{ github.repository }}/contents/$FILE?ref=master -q .sha)
-          CONTENT=$(base64 -w0 $FILE)
-          gh api repos/${{ github.repository }}/contents/$FILE \
-            --method PUT \
-            -f branch="update-images" \
-            -f message="chore: update Docker image versions" \
-            -f content="$CONTENT" \
-            -f sha="$FILE_SHA"
+          gh pr edit ${{ env.EXISTING_PR }} --body "Automated image updates.\n\nChanged images:\n$CHANGES"
 
       - name: Create Pull Request
-        if: ${{ env.EXISTING_PR == '' }}
+        if: env.EXISTING_PR == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CHANGES=$(cat changes.log)
           gh pr create \
             --title "Update Docker image versions" \
-            --body "Automated image updates via API-signed commit.\n\nChanged images:\n$CHANGES" \
+            --body "Automated image updates.\n\nChanged images:\n$CHANGES" \
             --head update-images \
             --base master
+
       - name: Clean up changes.log
         if: success()
         run: rm changes.log
