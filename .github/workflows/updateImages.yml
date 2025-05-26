@@ -52,6 +52,15 @@ jobs:
             exit 0
           fi
 
+      - name: Check for changes
+        id: update_check
+        run: |
+          if [ -f "changes.log" ]; then
+            echo "changes_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes_exist=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create API-signed commits
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -70,7 +79,7 @@ jobs:
             -f branch="update-images"
 
       - name: Update existing PR
-        if: env.EXISTING_PR != ''
+        if: env.EXISTING_PR != '' && steps.update_check.outputs.changes_exist == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -81,7 +90,7 @@ jobs:
           gh pr edit ${{ env.EXISTING_PR }} --body "$NEW_BODY"
 
       - name: Create Pull Request
-        if: env.EXISTING_PR == ''
+        if: env.EXISTING_PR == '' && steps.update_check.outputs.changes_exist == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -93,5 +102,5 @@ jobs:
             --base master
 
       - name: Clean up changes.log
-        if: success()
+        if: success() && steps.update_check.outputs.changes_exist == 'true'
         run: rm changes.log || true
