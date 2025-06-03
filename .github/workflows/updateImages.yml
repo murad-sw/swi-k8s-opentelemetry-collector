@@ -11,6 +11,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH_NAME: "update-images"
 
     steps:
       - uses: actions/checkout@v4
@@ -20,88 +23,68 @@ jobs:
         with: 
           python-version: '3.11'
 
-      - name: Install deps
+      - name: Install dependencies
         run: pip install ruamel.yaml requests packaging PyGithub
 
-      - name: Check for existing PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check for existing PR and setup branch
         run: |
-          EXISTING_PR=$(gh pr list --state open --head update-images --json number -q '.[0].number')
+          # Check for existing PR
+          EXISTING_PR=$(gh pr list --state open --head "$BRANCH_NAME" --json number -q '.[0].number')
           echo "EXISTING_PR=$EXISTING_PR" >> $GITHUB_ENV
-
-      - name: Setup update branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ -z "${{ env.EXISTING_PR }}" ]; then
+          
+          # Setup branch
+          if [ -z "$EXISTING_PR" ]; then
             # Create new branch if PR doesn't exist
             BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
-            gh api repos/${{ github.repository }}/git/refs \
-              -f ref="refs/heads/update-images" \
-              -f sha="$BASE_SHA"
+            gh api repos/${{ github.repository }}/git/refs -f ref="refs/heads/$BRANCH_NAME" -f sha="$BASE_SHA"
           fi
-          git fetch origin update-images
-          git checkout update-images
+          git fetch origin "$BRANCH_NAME"
+          git checkout "$BRANCH_NAME"
 
-      - name: Run updater
-        run: |
-          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
-          if [ $? -ne 0 ]; then
-            echo "No changes detected."
-            exit 0
-          fi
-
-      - name: Check for changes
+      - name: Update images and check for changes
         id: update_check
         run: |
+          # Run the updater script
+          python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
+          
+          # Check if changes were made
           if [ -f "changes.log" ]; then
             echo "changes_exist=true" >> $GITHUB_OUTPUT
+            
+            # Commit changes with API
+            VALUES_PATH="deploy/helm/values.yaml"
+            VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref="$BRANCH_NAME" -q .sha)
+            VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
+            gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
+              --method PUT \
+              -f message="chore: update Docker image versions" \
+              -f content="$VALUES_CONTENT" \
+              -f sha="$VALUES_SHA" \
+              -f branch="$BRANCH_NAME"
           else
+            echo "No changes detected."
             echo "changes_exist=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create API-signed commits
+      - name: Create or update PR
         if: steps.update_check.outputs.changes_exist == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get SHA of the values.yaml file
-          VALUES_PATH="deploy/helm/values.yaml"
-          VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref=update-images -q .sha)
+          CHANGES=$(cat changes.log)
           
-          # Create commit for values.yaml
-          VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
-          gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
-            --method PUT \
-            -f message="chore: update Docker image versions" \
-            -f content="$VALUES_CONTENT" \
-            -f sha="$VALUES_SHA" \
-            -f branch="update-images"
-
-      - name: Update existing PR
-        if: env.EXISTING_PR != '' && steps.update_check.outputs.changes_exist == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          CHANGES=$(cat changes.log)
-          EXISTING_BODY=$(gh pr view ${{ env.EXISTING_PR }} --json body -q .body)
-          NEW_BODY="$EXISTING_BODY
+          if [ -n "$EXISTING_PR" ]; then
+            # Update existing PR
+            EXISTING_BODY=$(gh pr view "$EXISTING_PR" --json body -q .body)
+            NEW_BODY="$EXISTING_BODY
           $CHANGES"
-          gh pr edit ${{ env.EXISTING_PR }} --body "$NEW_BODY"
-
-      - name: Create Pull Request
-        if: env.EXISTING_PR == '' && steps.update_check.outputs.changes_exist == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          CHANGES=$(cat changes.log)
-          gh pr create \
-            --title "Update Docker image versions" \
-            --body "$CHANGES" \
-            --head update-images \
-            --base master
-
-      - name: Clean up changes.log
-        if: success() && steps.update_check.outputs.changes_exist == 'true'
-        run: rm changes.log || true
+            gh pr edit "$EXISTING_PR" --body "$NEW_BODY"
+          else
+            # Create new PR
+            gh pr create \
+              --title "Update Docker image versions" \
+              --body "$CHANGES" \
+              --head "$BRANCH_NAME" \
+              --base master
+          fi
+          
+          # Clean up changes.log
+          rm changes.log || true
