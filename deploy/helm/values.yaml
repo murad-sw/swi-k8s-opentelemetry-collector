@@ -1004,7 +1004,7 @@ operator:
       # Currently only Java and Python supported, other languages are TBD
       java:
         repository: "solarwinds/autoinstrumentation-java"
-        tag: "2.15.0"
+        tag: "2.16.0"
       nodejs:
         repository: ""
         tag: ""
