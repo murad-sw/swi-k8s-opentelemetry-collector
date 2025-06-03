@@ -14,6 +14,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BRANCH_NAME: "update-images"
+      VALUES_PATH: "deploy/helm/values.yaml"
 
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +29,10 @@ jobs:
 
       - name: Check for existing PR and setup branch
         run: |
-          # Check for existing PR
           EXISTING_PR=$(gh pr list --state open --head "$BRANCH_NAME" --json number -q '.[0].number')
           echo "EXISTING_PR=$EXISTING_PR" >> $GITHUB_ENV
           
-          # Setup branch
           if [ -z "$EXISTING_PR" ]; then
-            # Create new branch if PR doesn't exist
             BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
             gh api repos/${{ github.repository }}/git/refs -f ref="refs/heads/$BRANCH_NAME" -f sha="$BASE_SHA"
           fi
@@ -44,15 +42,11 @@ jobs:
       - name: Update images and check for changes
         id: update_check
         run: |
-          # Run the updater script
           python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
           
-          # Check if changes were made
           if [ -f "changes.log" ]; then
             echo "changes_exist=true" >> $GITHUB_OUTPUT
             
-            # Commit changes with API
-            VALUES_PATH="deploy/helm/values.yaml"
             VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref="$BRANCH_NAME" -q .sha)
             VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
             gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
@@ -72,13 +66,11 @@ jobs:
           CHANGES=$(cat changes.log)
           
           if [ -n "$EXISTING_PR" ]; then
-            # Update existing PR
             EXISTING_BODY=$(gh pr view "$EXISTING_PR" --json body -q .body)
             NEW_BODY="$EXISTING_BODY
           $CHANGES"
             gh pr edit "$EXISTING_PR" --body "$NEW_BODY"
           else
-            # Create new PR
             gh pr create \
               --title "Update Docker image versions" \
               --body "$CHANGES" \
@@ -86,5 +78,4 @@ jobs:
               --base master
           fi
           
-          # Clean up changes.log
           rm changes.log || true
