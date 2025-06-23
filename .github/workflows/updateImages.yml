@@ -27,55 +27,83 @@ jobs:
       - name: Install dependencies
         run: pip install ruamel.yaml requests packaging PyGithub
 
-      - name: Check for existing PR and setup branch
+      - name: Check for existing PR
+        id: check_pr
         run: |
           EXISTING_PR=$(gh pr list --state open --head "$BRANCH_NAME" --json number -q '.[0].number')
           echo "EXISTING_PR=$EXISTING_PR" >> $GITHUB_ENV
-          
-          if [ -z "$EXISTING_PR" ]; then
-            BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
-            gh api repos/${{ github.repository }}/git/refs -f ref="refs/heads/$BRANCH_NAME" -f sha="$BASE_SHA"
-          fi
-          git fetch origin "$BRANCH_NAME"
-          git checkout "$BRANCH_NAME"
+          echo "existing_pr=$EXISTING_PR" >> $GITHUB_OUTPUT
 
-      - name: Update images and check for changes
+      - name: Run update images script
         id: update_check
         run: |
           python utils/update_images.py --github-token ${{ secrets.GITHUB_TOKEN }}
           
           if [ -f "changes.log" ]; then
             echo "changes_exist=true" >> $GITHUB_OUTPUT
-            
-            VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref="$BRANCH_NAME" -q .sha)
-            VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
-            gh api repos/${{ github.repository }}/contents/$VALUES_PATH \
-              --method PUT \
-              -f message="chore: update Docker image versions" \
-              -f content="$VALUES_CONTENT" \
-              -f sha="$VALUES_SHA" \
-              -f branch="$BRANCH_NAME"
           else
             echo "No changes detected."
             echo "changes_exist=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create or update PR
-        if: steps.update_check.outputs.changes_exist == 'true'
+      - name: Create branch and push changes
+        if: steps.update_check.outputs.changes_exist == 'true' && steps.check_pr.outputs.existing_pr == ''
         run: |
-          CHANGES=$(cat changes.log)
+          # Get master branch SHA
+          BASE_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/master -q .object.sha)
           
-          if [ -n "$EXISTING_PR" ]; then
-            EXISTING_BODY=$(gh pr view "$EXISTING_PR" --json body -q .body)
-            NEW_BODY="$EXISTING_BODY
-          $CHANGES"
-            gh pr edit "$EXISTING_PR" --body "$NEW_BODY"
-          else
-            gh pr create \
-              --title "Update Docker image versions" \
-              --body "$CHANGES" \
-              --head "$BRANCH_NAME" \
-              --base master
-          fi
+          # Create new branch from master
+          echo "Creating new branch '$BRANCH_NAME' from master..."
+          gh api -X POST /repos/${{ github.repository }}/git/refs \
+              --field ref="refs/heads/$BRANCH_NAME" \
+              --field sha="$BASE_SHA"
+          
+          # Get the SHA of the current values.yaml in master
+          VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref=master -q '.sha')
+          
+          # Push changes to the new branch using GitHub API
+          echo "Pushing changes to branch '$BRANCH_NAME'..."
+          VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
+          gh api --method PUT /repos/${{ github.repository }}/contents/$VALUES_PATH \
+              --field message="chore: update Docker image versions" \
+              --field content="$VALUES_CONTENT" \
+              --field branch="$BRANCH_NAME" \
+              --field sha="$VALUES_SHA"
+              
+          # Create pull request
+          echo "Creating pull request..."
+          cat changes.log > pr_body.txt
+          gh pr create \
+            --title "Update Docker image versions" \
+            --body-file pr_body.txt \
+            --head "$BRANCH_NAME" \
+            --base master
+          
+          rm changes.log || true
+
+      - name: Update existing PR
+        if: steps.update_check.outputs.changes_exist == 'true' && steps.check_pr.outputs.existing_pr != ''
+        run: |
+          # Get the SHA of current values.yaml in the branch
+          VALUES_SHA=$(gh api repos/${{ github.repository }}/contents/$VALUES_PATH?ref="$BRANCH_NAME" -q '.sha')
+          
+          # Push updated values.yaml to the branch
+          echo "Updating values.yaml in branch '$BRANCH_NAME'..."
+          VALUES_CONTENT=$(base64 -w0 $VALUES_PATH)
+          gh api --method PUT /repos/${{ github.repository }}/contents/$VALUES_PATH \
+              --field message="chore: update Docker image versions" \
+              --field content="$VALUES_CONTENT" \
+              --field branch="$BRANCH_NAME" \
+              --field sha="$VALUES_SHA"
+          
+          # Update PR description
+          echo "Updating PR description..."
+          EXISTING_BODY=$(gh pr view "$EXISTING_PR" --json body -q .body)
+          CHANGES=$(cat changes.log)
+          echo "Updating PR with new changes"
+          echo "$EXISTING_BODY" > pr_body.txt
+          echo "" >> pr_body.txt
+          echo "$CHANGES" >> pr_body.txt
+          gh pr edit "$EXISTING_PR" --body-file pr_body.txt
           
           rm changes.log || true
