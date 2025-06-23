@@ -993,7 +993,7 @@ operator:
     image:
       repository: 
         ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
-      tag: "v0.121.0"
+      tag: "v0.119.0"
     targetAllocatorImage:
       repository: ""
       tag: ""
