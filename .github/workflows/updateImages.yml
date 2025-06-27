@@ -3,7 +3,7 @@ name: Update Docker Images
 on:
   workflow_dispatch:
   schedule:
-    - cron: '25 13 * * *'
+    - cron: '22 11 * * *'
 
 
 jobs:
