@@ -1059,7 +1059,7 @@ beyla:
 
   image:
     repository: "grafana/beyla"
-    tag: "2.2.1"
+    tag: "2.2.4"
     pullPolicy: IfNotPresent
 
   resources:
