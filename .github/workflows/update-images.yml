@@ -45,9 +45,7 @@ jobs:
       run: |
         python utils/update_images.py \
           --github-token "$GITHUB_TOKEN" \
-          --repository "$REPOSITORY" \
-          --update-chart \
-          --pr-mode
+          --repository "$REPOSITORY"
     
     - name: Check workflow status
       if: failure()

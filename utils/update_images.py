@@ -110,27 +110,13 @@ def get_latest_tag(registry, repository, version_pattern=None, github_token=None
         if not tags and github_token:
             parts = repo_name.split('/')
             if len(parts) >= 2:
-                github_repo = f"{parts[0]}/{parts[1]}"
-                logger.info(f"Trying to fetch tags directly from GitHub repo: {github_repo}")
-                tags = get_github_repo_tags(github_repo, github_token)
+                fallback_repo = f"{parts[0]}/{parts[1]}"
+                tags = get_ghcr_tags(fallback_repo, version_pattern, github_token)
                 
         return get_latest_version(tags)
     
     logger.warning(f"Unsupported registry: {registry}")
     return None
-
-def get_github_repo_tags(repository_path, github_token=None):
-    """Get tags from GitHub repository"""
-    
-    tags = []
-    try:
-        g = Github(github_token)
-        repo = g.get_repo(repository_path)
-        tags = [tag.name for tag in repo.get_tags()]
-    except Exception as e:
-        logger.error(f"Error fetching GitHub tags for {repository_path}: {str(e)}")
-    
-    return tags
 
 def detect_images_in_yaml(yaml_data, path=None):
     """Recursively find image configurations in YAML"""
@@ -147,8 +133,7 @@ def detect_images_in_yaml(yaml_data, path=None):
                 return found_images
                 
             if "/" in repository and "." in repository.split("/")[0]:
-                registry = repository.split("/")[0]
-                repo_name = "/".join(repository.split("/")[1:])
+                registry, repo_name = repository.split("/", 1)
             else:
                 registry = "docker.io"
                 repo_name = repository
@@ -158,15 +143,12 @@ def detect_images_in_yaml(yaml_data, path=None):
                 
             name = repository.split("/")[-1].title()
             if path:
-                name = f"{'.'.join(path)}"
+                name = f"{path[-1].title()}-{name}"
             
             current_tag = yaml_data.get("tag", "")
             version_pattern = None
             if current_tag:
-                if current_tag.startswith("v") and re.match(r"^v\d+\.\d+\.\d+", current_tag):
-                    version_pattern = r"^v\d+\.\d+\.\d+$"
-                elif re.match(r"^\d+\.\d+\.\d+", current_tag):
-                    version_pattern = r"^\d+\.\d+\.\d+$"
+                version_pattern = r"^v?\d+\.\d+\.\d+.*$"
             
             found_images.append({
                 "name": name,
@@ -223,40 +205,6 @@ def update_yaml_file(file_path, changes):
     
     return applied_changes
 
-def update_chart_version(chart_file, app_version=None):
-    """Update the Chart.yaml file with a new version"""
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    yaml.indent(mapping=2, sequence=4, offset=2)
-    
-    try:
-        with open(chart_file, 'r') as f:
-            chart_data = yaml.load(f)
-        
-        chart_version = chart_data.get("version", "0.0.0")
-        version_parts = chart_version.split('.')
-        
-        if len(version_parts) == 3:
-            version_parts[2] = str(int(version_parts[2].split('-')[0]) + 1)
-            
-            if '-' in chart_version:
-                suffix = chart_version.split('-', 1)[1]
-                new_chart_version = '.'.join(version_parts) + '-' + suffix
-            else:
-                new_chart_version = '.'.join(version_parts)
-            
-            chart_data["version"] = new_chart_version
-            
-            if app_version:
-                chart_data["appVersion"] = app_version
-            
-            with open(chart_file, 'w') as f:
-                yaml.dump(chart_data, f)
-            
-            logger.info(f"Updated Chart.yaml: version {chart_version} -> {new_chart_version}")
-    except Exception as e:
-        logger.error(f"Error updating Chart.yaml: {str(e)}")
-
 def run_command(cmd, cwd=None):
     """Run a shell command and return the output"""
     try:
@@ -296,9 +244,9 @@ def create_or_switch_branch(branch_name):
         logger.info(f"Creating new branch {branch_name}")
         run_command(f"git checkout -b {branch_name}")
 
-def commit_changes_via_api(github_repo, branch_name, changes, chart_updated=False, values_file="deploy/helm/values.yaml", chart_file="deploy/helm/Chart.yaml"):
-    """Commit changes using GitHub API to create verified commits"""
-    if not changes and not chart_updated:
+def create_verified_commit(github_repo, branch_name, changes, values_file="deploy/helm/values.yaml"):
+    """Create a verified commit using GitHub API"""
+    if not changes:
         return False
     
     try:
@@ -307,48 +255,43 @@ def commit_changes_via_api(github_repo, branch_name, changes, chart_updated=Fals
         for change in changes:
             commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
         
-        if chart_updated:
-            commit_msg += "- Updated Chart.yaml version\n"
-        
         # Get current commit SHA of the branch
-        ref = github_repo.get_git_ref(f"heads/{branch_name}")
-        current_sha = ref.object.sha
+        try:
+            ref = github_repo.get_git_ref(f"heads/{branch_name}")
+            current_sha = ref.object.sha
+        except Exception:
+            # If branch doesn't exist on remote, get master branch
+            master_ref = github_repo.get_git_ref("heads/master")
+            current_sha = master_ref.object.sha
+            # Create the branch reference
+            github_repo.create_git_ref(f"refs/heads/{branch_name}", current_sha)
+            ref = github_repo.get_git_ref(f"heads/{branch_name}")
         
         # Get current tree
         commit = github_repo.get_git_commit(current_sha)
         tree = commit.tree
         
-        # Create blobs for modified files
-        blobs = []
-        
         # Read and create blob for values.yaml
         with open(values_file, 'r') as f:
             values_content = f.read()
         values_blob = github_repo.create_git_blob(values_content, "utf-8")
-        blobs.append({
+        
+        # Create blobs for modified files
+        blobs = [{
             "path": values_file,
             "mode": "100644",
             "type": "blob",
             "sha": values_blob.sha
-        })
-        
-        # If chart was updated, add Chart.yaml blob
-        if chart_updated:
-            with open(chart_file, 'r') as f:
-                chart_content = f.read()
-            chart_blob = github_repo.create_git_blob(chart_content, "utf-8")
-            blobs.append({
-                "path": chart_file,
-                "mode": "100644", 
-                "type": "blob",
-                "sha": chart_blob.sha
-            })
+        }]
         
         # Create new tree
         new_tree = github_repo.create_git_tree(blobs, tree)
         
         # Create commit with github-actions bot as author
-        author = InputGitAuthor("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
+        author = InputGitAuthor(
+            "github-actions[bot]", 
+            "41898282+github-actions[bot]@users.noreply.github.com"
+        )
         
         new_commit = github_repo.create_git_commit(
             commit_msg,
@@ -361,40 +304,17 @@ def commit_changes_via_api(github_repo, branch_name, changes, chart_updated=Fals
         # Update branch reference
         ref.edit(new_commit.sha)
         
-        logger.info("Changes committed successfully via GitHub API")
+        logger.info("Verified commit created successfully via GitHub API")
         return True
         
     except Exception as e:
-        logger.error(f"Error committing via API: {str(e)}")
+        logger.error(f"Error creating verified commit: {str(e)}")
         return False
 
-def commit_changes(changes, chart_updated=False):
-    """Commit the changes to git"""
-    if not changes and not chart_updated:
-        return False
-    
-    # Add all changed files
-    run_command("git add .")
-    
-    # Create commit message
-    commit_msg = "Update Docker images\n\n"
-    for change in changes:
-        commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
-    
-    if chart_updated:
-        commit_msg += "- Updated Chart.yaml version\n"
-    
-    stdout, stderr, code = run_command(f'git commit -m "{commit_msg}" --author="github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"')
-    return code == 0
-
-def push_branch(branch_name):
-    """Push the branch to remote"""
-    # Try to push, if branch doesn't exist on remote, use -u to set upstream
-    stdout, stderr, code = run_command(f"git push origin {branch_name}")
-    if code != 0:
-        # Try with -u flag to set upstream
-        stdout, stderr, code = run_command(f"git push -u origin {branch_name}")
-    return code == 0
+def has_uncommitted_changes():
+    """Check if there are uncommitted changes"""
+    stdout, stderr, code = run_command("git status --porcelain")
+    return len(stdout.strip()) > 0
 
 def get_existing_pr(github_repo, branch_name):
     """Check if PR already exists for the branch"""
@@ -483,35 +403,11 @@ def create_or_update_pr(github_repo, branch_name, changes):
         )
         return new_pr
 
-def has_uncommitted_changes():
-    """Check if there are uncommitted changes"""
-    stdout, stderr, code = run_command("git status --porcelain")
-    return len(stdout.strip()) > 0
-
-def check_git_config():
-    """Check if git is properly configured"""
-    user_name, stderr, code = run_command("git config user.name")
-    if code != 0 or not user_name:
-        logger.error("Git user.name not configured")
-        return False
-    
-    user_email, stderr, code = run_command("git config user.email")
-    if code != 0 or not user_email:
-        logger.error("Git user.email not configured")
-        return False
-    
-    return True
-
 def main():
     parser = argparse.ArgumentParser(description="Update Docker image versions in Helm charts")
-    parser.add_argument("--dry-run", action="store_true", help="Only print what would be updated")
     parser.add_argument("--github-token", help="GitHub token for fetching tags")
     parser.add_argument("--repository", default="murad-sw/swi-k8s-opentelemetry-collector", help="GitHub repository")
-    parser.add_argument("--update-chart", action="store_true", help="Update Chart.yaml version")
     parser.add_argument("--values-file", default="deploy/helm/values.yaml", help="Path to values.yaml")
-    parser.add_argument("--chart-file", default="deploy/helm/Chart.yaml", help="Path to Chart.yaml")
-    parser.add_argument("--filter", help="Only update images containing this string in repository")
-    parser.add_argument("--pr-mode", action="store_true", help="Enable PR mode for GitHub Actions")
     args = parser.parse_args()
 
     # Get GitHub token from environment if not provided
@@ -522,6 +418,10 @@ def main():
     if not args.repository:
         args.repository = os.getenv('REPOSITORY', 'murad-sw/swi-k8s-opentelemetry-collector')
 
+    if not args.github_token:
+        logger.error("GitHub token is required")
+        return 1
+
     yaml = YAML()
     yaml.preserve_quotes = True
     with open(args.values_file, 'r') as f:
@@ -531,12 +431,7 @@ def main():
     detected_images = detect_images_in_yaml(values)
     logger.info(f"Found {len(detected_images)} images")
 
-    if args.filter:
-        detected_images = [img for img in detected_images if args.filter in img["repository"]]
-        logger.info(f"After filtering: {len(detected_images)} images")
-
     changes = []
-    app_version = None
 
     for image in detected_images:
         name = image["name"]
@@ -557,9 +452,6 @@ def main():
             logger.warning(f"  Skipping {name}, couldn't determine latest tag")
             continue
 
-        if repository == "solarwinds/solarwinds-otel-collector" and yaml_path == ["otel", "image"]:
-            app_version = latest_tag
-
         if current_tag == latest_tag:
             logger.info(f"  Latest version already in use: {current_tag}")
             continue
@@ -572,100 +464,44 @@ def main():
                 "new_tag": latest_tag
             })
 
-    # Handle PR mode logic
-    if args.pr_mode and args.github_token:
-        # Check git configuration
-        if not check_git_config():
-            logger.error("Git not properly configured for PR mode")
+    if not changes:
+        logger.info("No updates needed.")
+        return 0
+
+    branch_name = "update-images"
+    original_branch = get_current_branch()
+    
+    try:
+        # Initialize GitHub API client
+        g = Github(args.github_token)
+        repo = g.get_repo(args.repository)
+        
+        # Create or switch to update branch
+        create_or_switch_branch(branch_name)
+        
+        # Apply changes
+        applied_changes = update_yaml_file(args.values_file, changes)
+        logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
+        
+        # Create verified commit via GitHub API
+        if create_verified_commit(repo, branch_name, applied_changes, args.values_file):
+            logger.info("Verified commit created successfully")
+            
+            # Create or update PR
+            try:
+                pr = create_or_update_pr(repo, branch_name, applied_changes)
+                logger.info(f"PR created/updated: {pr.html_url}")
+            except Exception as e:
+                logger.error(f"Error creating/updating PR: {str(e)}")
+                return 1
+        else:
+            logger.error("Failed to create verified commit")
             return 1
             
-        branch_name = "update-images"
-        
-        # If no changes, check if PR exists and exit
-        if not changes:
-            logger.info("No updates needed.")
-            return 0
-            
-        # Remember current branch
-        original_branch = get_current_branch()
-        
-        try:
-            # Initialize GitHub API client
-            g = Github(args.github_token)
-            repo = g.get_repo(args.repository)
-            
-            # Create or switch to update branch
-            create_or_switch_branch(branch_name)
-            
-            # Apply changes
-            applied_changes = update_yaml_file(args.values_file, changes)
-            logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
-            
-            chart_updated = False
-            if args.update_chart:
-                update_chart_version(args.chart_file, app_version)
-                chart_updated = True
-            
-            # Check if there are actual changes to commit
-            if has_uncommitted_changes():
-                # Try to commit changes via GitHub API for verified commits
-                api_commit_success = commit_changes_via_api(
-                    repo, branch_name, applied_changes, chart_updated, 
-                    args.values_file, args.chart_file
-                )
-                
-                if api_commit_success:
-                    logger.info("Changes committed successfully via GitHub API")
-                else:
-                    # Fallback to regular git commit
-                    if commit_changes(applied_changes, chart_updated):
-                        logger.info("Changes committed successfully via git")
-                        
-                        # Push branch
-                        if push_branch(branch_name):
-                            logger.info("Branch pushed successfully")
-                        else:
-                            logger.error("Failed to push branch")
-                            return 1
-                    else:
-                        logger.error("Failed to commit changes")
-                        return 1
-                
-                # Create or update PR
-                try:
-                    pr = create_or_update_pr(repo, branch_name, applied_changes)
-                    logger.info(f"PR created/updated: {pr.html_url}")
-                except Exception as e:
-                    logger.error(f"Error creating/updating PR: {str(e)}")
-                    return 1
-            else:
-                logger.info("No changes to commit")
-                
-        finally:
-            # Return to original branch
-            if original_branch:
-                run_command(f"git checkout {original_branch}")
-                
-    else:
-        # Original logic for non-PR mode
-        if changes:
-            if args.dry_run:
-                logger.info("Dry run mode: Listing changes only")
-                for change in changes:
-                    print(f"{change['name']}: {change['old_tag']} -> {change['new_tag']}")
-            else:
-                applied_changes = update_yaml_file(args.values_file, changes)
-                logger.info(f"Updated {len(applied_changes)} images in {args.values_file}")
-
-                if args.update_chart:
-                    update_chart_version(args.chart_file, app_version)
-
-            with open("changes.log", "w") as log_file:
-                for change in changes:
-                    log_file.write(f"{change['name']}: {change['old_tag']} -> {change['new_tag']}\n")
-        else:
-            logger.info("No updates needed.")
-            return 0
+    finally:
+        # Return to original branch
+        if original_branch:
+            run_command(f"git checkout {original_branch}")
 
     return 0
 
