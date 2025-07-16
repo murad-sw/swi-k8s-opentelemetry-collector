@@ -8,7 +8,7 @@ import subprocess
 import json
 from packaging import version
 from ruamel.yaml import YAML
-from github import Github
+from github import Github, InputGitAuthor
 from urllib.parse import urlparse
 
 
@@ -296,6 +296,78 @@ def create_or_switch_branch(branch_name):
         logger.info(f"Creating new branch {branch_name}")
         run_command(f"git checkout -b {branch_name}")
 
+def commit_changes_via_api(github_repo, branch_name, changes, chart_updated=False, values_file="deploy/helm/values.yaml", chart_file="deploy/helm/Chart.yaml"):
+    """Commit changes using GitHub API to create verified commits"""
+    if not changes and not chart_updated:
+        return False
+    
+    try:
+        # Create commit message
+        commit_msg = "Update Docker images\n\n"
+        for change in changes:
+            commit_msg += f"- {change['name']}: {change['old_tag']} -> {change['new_tag']}\n"
+        
+        if chart_updated:
+            commit_msg += "- Updated Chart.yaml version\n"
+        
+        # Get current commit SHA of the branch
+        ref = github_repo.get_git_ref(f"heads/{branch_name}")
+        current_sha = ref.object.sha
+        
+        # Get current tree
+        commit = github_repo.get_git_commit(current_sha)
+        tree = commit.tree
+        
+        # Create blobs for modified files
+        blobs = []
+        
+        # Read and create blob for values.yaml
+        with open(values_file, 'r') as f:
+            values_content = f.read()
+        values_blob = github_repo.create_git_blob(values_content, "utf-8")
+        blobs.append({
+            "path": values_file,
+            "mode": "100644",
+            "type": "blob",
+            "sha": values_blob.sha
+        })
+        
+        # If chart was updated, add Chart.yaml blob
+        if chart_updated:
+            with open(chart_file, 'r') as f:
+                chart_content = f.read()
+            chart_blob = github_repo.create_git_blob(chart_content, "utf-8")
+            blobs.append({
+                "path": chart_file,
+                "mode": "100644", 
+                "type": "blob",
+                "sha": chart_blob.sha
+            })
+        
+        # Create new tree
+        new_tree = github_repo.create_git_tree(blobs, tree)
+        
+        # Create commit with github-actions bot as author
+        author = InputGitAuthor("github-actions[bot]", "41898282+github-actions[bot]@users.noreply.github.com")
+        
+        new_commit = github_repo.create_git_commit(
+            commit_msg,
+            new_tree,
+            [commit],
+            author=author,
+            committer=author
+        )
+        
+        # Update branch reference
+        ref.edit(new_commit.sha)
+        
+        logger.info("Changes committed successfully via GitHub API")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error committing via API: {str(e)}")
+        return False
+
 def commit_changes(changes, chart_updated=False):
     """Commit the changes to git"""
     if not changes and not chart_updated:
@@ -518,6 +590,10 @@ def main():
         original_branch = get_current_branch()
         
         try:
+            # Initialize GitHub API client
+            g = Github(args.github_token)
+            repo = g.get_repo(args.repository)
+            
             # Create or switch to update branch
             create_or_switch_branch(branch_name)
             
@@ -532,28 +608,35 @@ def main():
             
             # Check if there are actual changes to commit
             if has_uncommitted_changes():
-                # Commit changes
-                if commit_changes(applied_changes, chart_updated):
-                    logger.info("Changes committed successfully")
-                    
-                    # Push branch
-                    if push_branch(branch_name):
-                        logger.info("Branch pushed successfully")
+                # Try to commit changes via GitHub API for verified commits
+                api_commit_success = commit_changes_via_api(
+                    repo, branch_name, applied_changes, chart_updated, 
+                    args.values_file, args.chart_file
+                )
+                
+                if api_commit_success:
+                    logger.info("Changes committed successfully via GitHub API")
+                else:
+                    # Fallback to regular git commit
+                    if commit_changes(applied_changes, chart_updated):
+                        logger.info("Changes committed successfully via git")
                         
-                        # Create or update PR
-                        try:
-                            g = Github(args.github_token)
-                            repo = g.get_repo(args.repository)
-                            pr = create_or_update_pr(repo, branch_name, applied_changes)
-                            logger.info(f"PR created/updated: {pr.html_url}")
-                        except Exception as e:
-                            logger.error(f"Error creating/updating PR: {str(e)}")
+                        # Push branch
+                        if push_branch(branch_name):
+                            logger.info("Branch pushed successfully")
+                        else:
+                            logger.error("Failed to push branch")
                             return 1
                     else:
-                        logger.error("Failed to push branch")
+                        logger.error("Failed to commit changes")
                         return 1
-                else:
-                    logger.error("Failed to commit changes")
+                
+                # Create or update PR
+                try:
+                    pr = create_or_update_pr(repo, branch_name, applied_changes)
+                    logger.info(f"PR created/updated: {pr.html_url}")
+                except Exception as e:
+                    logger.error(f"Error creating/updating PR: {str(e)}")
                     return 1
             else:
                 logger.info("No changes to commit")
