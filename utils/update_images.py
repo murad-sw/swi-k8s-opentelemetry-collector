@@ -407,7 +407,7 @@ def create_or_update_pr(github_repo, branch_name, changes):
             title=title,
             body=description,
             head=branch_name,
-            base="main"
+            base="master"
         )
         return new_pr
 
