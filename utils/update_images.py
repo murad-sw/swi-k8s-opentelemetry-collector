@@ -269,23 +269,23 @@ def create_verified_commit(github_repo, branch_name, changes, values_file="deplo
         
         # Get current tree
         commit = github_repo.get_git_commit(current_sha)
-        tree = commit.tree
+        base_tree = commit.tree
         
         # Read and create blob for values.yaml
         with open(values_file, 'r') as f:
             values_content = f.read()
         values_blob = github_repo.create_git_blob(values_content, "utf-8")
         
-        # Create blobs for modified files
-        blobs = [{
+        # Create tree elements for modified files
+        tree_elements = [{
             "path": values_file,
             "mode": "100644",
             "type": "blob",
             "sha": values_blob.sha
         }]
         
-        # Create new tree
-        new_tree = github_repo.create_git_tree(blobs, tree)
+        # Create new tree with base tree
+        new_tree = github_repo.create_git_tree(tree_elements, base_tree.sha)
         
         # Create commit with github-actions bot as author
         author = InputGitAuthor(
