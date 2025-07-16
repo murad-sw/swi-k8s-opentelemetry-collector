@@ -67,8 +67,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        cd utils
-        python update_images.py \
+        python utils/update_images.py \
           --github-token "$GITHUB_TOKEN" \
           --repository "${{ github.repository }}" \
           --update-chart \
@@ -80,13 +79,13 @@ jobs:
     - name: Show changes summary
       if: always()
       run: |
-        if [ -f "utils/changes.log" ]; then
+        if [ -f "changes.log" ]; then
           echo "## Image Updates Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The following images were updated:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cat utils/changes.log >> $GITHUB_STEP_SUMMARY
+          cat changes.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
         else
           echo "## No Image Updates" >> $GITHUB_STEP_SUMMARY
