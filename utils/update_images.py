@@ -582,7 +582,8 @@ def main():
             logger.info("Found differences, updating existing PR...")
             
             # Commit changes to existing branch
-            commit_message = f"Update images: {', '.join([f'{c['name']} to {c['new_tag']}' for c in applied_changes])}"
+            image_updates = ', '.join([f"{c['name']} to {c['new_tag']}" for c in applied_changes])
+            commit_message = f"Update images: {image_updates}"
             if commit_changes(github_client, args.repository, args.branch_name, files_to_commit, commit_message):
                 # Update PR description
                 create_or_update_pr(github_client, args.repository, args.branch_name, applied_changes, existing_pr)
@@ -596,7 +597,8 @@ def main():
         logger.info("Creating new PR...")
         
         # Commit changes to new branch
-        commit_message = f"Update images: {', '.join([f'{c['name']} to {c['new_tag']}' for c in applied_changes])}"
+        image_updates = ', '.join([f"{c['name']} to {c['new_tag']}" for c in applied_changes])
+        commit_message = f"Update images: {image_updates}"
         if commit_changes(github_client, args.repository, args.branch_name, files_to_commit, commit_message):
             # Create new PR
             pr = create_or_update_pr(github_client, args.repository, args.branch_name, applied_changes)
