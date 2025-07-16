@@ -312,7 +312,7 @@ def commit_changes(changes, chart_updated=False):
     if chart_updated:
         commit_msg += "- Updated Chart.yaml version\n"
     
-    stdout, stderr, code = run_command(f'git commit -m "{commit_msg}"')
+    stdout, stderr, code = run_command(f'git commit -m "{commit_msg}" --author="github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"')
     return code == 0
 
 def push_branch(branch_name):
