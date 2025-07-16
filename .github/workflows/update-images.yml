@@ -36,8 +36,8 @@ jobs:
       uses: crazy-max/ghaction-import-gpg@v6
       continue-on-error: true
       with:
-        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-        passphrase: ${{ secrets.GPG_PASSPHRASE }}
+        gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY || '' }}
+        passphrase: ${{ secrets.GPG_PASSPHRASE || '' }}
         git_user_signingkey: true
         git_commit_gpgsign: true
         git_tag_gpgsign: true
@@ -52,11 +52,10 @@ jobs:
     
     - name: Install dependencies
       run: |
-        cd utils
         pip install -r requirements.txt
     
     - name: Configure Git (fallback for non-GPG)
-      if: steps.import_gpg.outcome == 'failure'
+      if: steps.import_gpg.outcome == 'failure' || steps.import_gpg.outcome == 'skipped'
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
