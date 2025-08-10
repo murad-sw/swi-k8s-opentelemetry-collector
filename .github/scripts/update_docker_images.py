@@ -373,8 +373,11 @@ class DockerImageUpdater:
                                 new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-alpha.{alpha_num}"
                             else:
                                 # Fallback: just increment base version
-                                new_base = str(int(base_part) + 1)
-                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                                try:
+                                    new_base = str(int(base_part) + 1)
+                                    new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                                except ValueError:
+                                    new_chart_version = old_chart_version
                         elif 'beta' in pre_release and '.' in pre_release:
                             # Handle format like "4.6.0-beta.1"
                             beta_parts = pre_release.split('.')
@@ -382,15 +385,18 @@ class DockerImageUpdater:
                                 beta_num = int(beta_parts[1]) + 1
                                 new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-beta.{beta_num}"
                             else:
-                                new_base = str(int(base_part) + 1)
-                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                                try:
+                                    new_base = str(int(base_part) + 1)
+                                    new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                                except ValueError:
+                                    new_chart_version = old_chart_version
                         else:
-                            # Simple increment of base version
+                            # Simple increment of base version for other pre-release formats
                             try:
                                 new_base = str(int(base_part) + 1)
                                 new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
                             except ValueError:
-                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}"
+                                new_chart_version = old_chart_version
                     else:
                         # Regular version without pre-release
                         if version_parts[2].isdigit():
@@ -402,6 +408,8 @@ class DockerImageUpdater:
                     if new_chart_version != old_chart_version:
                         chart_data['version'] = new_chart_version
                         self.logger.info(f"Updated Chart version: {old_chart_version} → {new_chart_version}")
+                    else:
+                        self.logger.info(f"Chart version unchanged: {old_chart_version}")
                         
             except Exception as e:
                 self.logger.warning(f"Could not update chart version: {e}")
@@ -468,9 +476,10 @@ class DockerImageUpdater:
                 
             # Get branch reference
             branch_ref = self.repo.get_git_ref(f"heads/{self.branch_name}")
-            base_tree = self.repo.get_git_tree(branch_ref.object.sha, recursive=True)
+            base_commit = self.repo.get_git_commit(branch_ref.object.sha)
+            base_tree = base_commit.tree
             
-            # Prepare file updates
+            # Prepare tree elements for modification
             tree_elements = []
             
             # Read and prepare values.yaml
@@ -497,12 +506,11 @@ class DockerImageUpdater:
                     'sha': chart_blob.sha
                 })
                 
-            # Create new tree
+            # Create new tree with updated files
             new_tree = self.repo.create_git_tree(tree_elements, base_tree)
             
             # Create commit
-            parent = self.repo.get_git_commit(branch_ref.object.sha)
-            commit = self.repo.create_git_commit(commit_message, new_tree, [parent])
+            commit = self.repo.create_git_commit(commit_message, new_tree, [base_commit])
             
             # Update branch reference
             branch_ref.edit(sha=commit.sha)
