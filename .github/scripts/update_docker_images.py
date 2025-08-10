@@ -71,7 +71,14 @@ class DockerImageUpdater:
         """Fetch tags from Docker Hub API with pagination support."""
         try:
             all_tags = []
-            url = f"https://hub.docker.com/v2/repositories/{repository}/tags"
+            
+            # Handle library images (e.g., busybox -> library/busybox)
+            if '/' not in repository:
+                repo_path = f"library/{repository}"
+            else:
+                repo_path = repository
+                
+            url = f"https://hub.docker.com/v2/repositories/{repo_path}/tags"
             
             while url:
                 self.logger.info(f"Fetching Docker Hub tags for {repository}: {url}")
@@ -129,21 +136,26 @@ class DockerImageUpdater:
                 'Accept': 'application/vnd.github.v3+json'
             }
             
-            url = f"https://api.github.com/user/packages/container/{package_name}/versions"
-            if owner != self.github.get_user().login:
-                url = f"https://api.github.com/orgs/{owner}/packages/container/{package_name}/versions"
-                
-            response = requests.get(url, headers=headers, timeout=self.timeout)
-            if response.status_code != 200:
-                return []
-                
-            data = response.json()
-            tags = []
-            for version_info in data:
-                if version_info.get('metadata', {}).get('container', {}).get('tags'):
-                    tags.extend(version_info['metadata']['container']['tags'])
+            # Try different API endpoints
+            urls_to_try = [
+                f"https://api.github.com/orgs/{owner}/packages/container/{package_name}/versions",
+                f"https://api.github.com/users/{owner}/packages/container/{package_name}/versions"
+            ]
+            
+            for url in urls_to_try:
+                try:
+                    response = requests.get(url, headers=headers, timeout=self.timeout)
+                    if response.status_code == 200:
+                        data = response.json()
+                        tags = []
+                        for version_info in data:
+                            if version_info.get('metadata', {}).get('container', {}).get('tags'):
+                                tags.extend(version_info['metadata']['container']['tags'])
+                        return tags
+                except Exception:
+                    continue
                     
-            return tags
+            return []
             
         except Exception as e:
             self.logger.debug(f"GHCR API failed for {owner}/{package_name}: {e}")
@@ -164,14 +176,26 @@ class DockerImageUpdater:
 
     def get_latest_version(self, repository: str, current_version: str = "") -> Optional[str]:
         """Get the latest semantic version for a Docker image."""
-        # Determine registry type
-        if repository.startswith('ghcr.io/') or '/' in repository and len(repository.split('/')) >= 2:
-            if 'docker.io' not in repository and 'index.docker.io' not in repository:
-                tags = self.get_ghcr_tags(repository)
+        # Clean repository name
+        clean_repo = repository.strip().replace('docker.io/', '').replace('index.docker.io/', '')
+        
+        # Determine registry type and get tags
+        if clean_repo.startswith('ghcr.io/'):
+            tags = self.get_ghcr_tags(clean_repo)
+        elif '/' in clean_repo and not clean_repo.startswith('library/'):
+            # Could be Docker Hub with org/image format, but check for known registries
+            if any(registry in clean_repo for registry in ['ghcr.io', 'gcr.io', 'quay.io']):
+                if 'ghcr.io' in clean_repo:
+                    tags = self.get_ghcr_tags(clean_repo)
+                else:
+                    # Other registries not supported yet, try Docker Hub as fallback
+                    tags = self.get_docker_hub_tags(clean_repo)
             else:
-                tags = self.get_docker_hub_tags(repository.replace('docker.io/', '').replace('index.docker.io/', ''))
+                # Likely Docker Hub with org/image format
+                tags = self.get_docker_hub_tags(clean_repo)
         else:
-            tags = self.get_docker_hub_tags(repository)
+            # Library image or simple name
+            tags = self.get_docker_hub_tags(clean_repo)
             
         if not tags:
             self.logger.warning(f"No tags found for {repository}")
@@ -336,28 +360,53 @@ class DockerImageUpdater:
             # Bump chart version (patch version)
             old_chart_version = chart_data.get('version', '0.0.0')
             try:
-                parsed_version = version.parse(old_chart_version)
-                # Simple patch version bump
+                # Handle alpha/beta versions
                 version_parts = old_chart_version.split('.')
                 if len(version_parts) >= 3:
-                    # Handle alpha/beta versions
                     if '-' in version_parts[2]:
                         base_part, pre_release = version_parts[2].split('-', 1)
-                        if 'alpha' in pre_release:
-                            alpha_num = int(pre_release.split('.')[-1]) + 1
-                            new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-alpha.{alpha_num}"
+                        if 'alpha' in pre_release and '.' in pre_release:
+                            # Handle format like "4.6.0-alpha.6"
+                            alpha_parts = pre_release.split('.')
+                            if len(alpha_parts) >= 2 and alpha_parts[1].isdigit():
+                                alpha_num = int(alpha_parts[1]) + 1
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-alpha.{alpha_num}"
+                            else:
+                                # Fallback: just increment base version
+                                new_base = str(int(base_part) + 1)
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                        elif 'beta' in pre_release and '.' in pre_release:
+                            # Handle format like "4.6.0-beta.1"
+                            beta_parts = pre_release.split('.')
+                            if len(beta_parts) >= 2 and beta_parts[1].isdigit():
+                                beta_num = int(beta_parts[1]) + 1
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-beta.{beta_num}"
+                            else:
+                                new_base = str(int(base_part) + 1)
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
                         else:
-                            version_parts[2] = str(int(base_part) + 1)
-                            new_chart_version = '.'.join(version_parts)
+                            # Simple increment of base version
+                            try:
+                                new_base = str(int(base_part) + 1)
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
+                            except ValueError:
+                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}"
                     else:
-                        version_parts[2] = str(int(version_parts[2]) + 1)
-                        new_chart_version = '.'.join(version_parts)
+                        # Regular version without pre-release
+                        if version_parts[2].isdigit():
+                            version_parts[2] = str(int(version_parts[2]) + 1)
+                            new_chart_version = '.'.join(version_parts)
+                        else:
+                            new_chart_version = old_chart_version
                         
-                    chart_data['version'] = new_chart_version
-                    self.logger.info(f"Updated Chart version: {old_chart_version} → {new_chart_version}")
-                    
+                    if new_chart_version != old_chart_version:
+                        chart_data['version'] = new_chart_version
+                        self.logger.info(f"Updated Chart version: {old_chart_version} → {new_chart_version}")
+                        
             except Exception as e:
                 self.logger.warning(f"Could not update chart version: {e}")
+                self.logger.debug(f"Chart version: {old_chart_version}")
+                # Don't update chart version if parsing fails
                 
             # Save updated Chart.yaml if not in dry run mode
             if not self.dry_run:
@@ -417,42 +466,35 @@ class DockerImageUpdater:
             for update in updates:
                 commit_message += f"- {update['repository']}: {update['old_tag']} → {update['new_tag']}\n"
                 
-            # Get current file contents and update them
-            files_to_update = []
-            
-            # Update values.yaml
-            if self.values_file_path.exists():
-                with open(self.values_file_path, 'r') as f:
-                    content = f.read()
-                    files_to_update.append({
-                        'path': str(self.values_file_path),
-                        'content': content
-                    })
-                    
-            # Update Chart.yaml if it was modified
-            if self.chart_file_path.exists():
-                with open(self.chart_file_path, 'r') as f:
-                    content = f.read()
-                    files_to_update.append({
-                        'path': str(self.chart_file_path),
-                        'content': content
-                    })
-                    
-            # Create commit
+            # Get branch reference
             branch_ref = self.repo.get_git_ref(f"heads/{self.branch_name}")
+            base_tree = self.repo.get_git_tree(branch_ref.object.sha, recursive=True)
             
-            # Get the tree for the branch
-            base_tree = self.repo.get_git_tree(branch_ref.object.sha)
-            
-            # Create new blobs for updated files
+            # Prepare file updates
             tree_elements = []
-            for file_info in files_to_update:
-                blob = self.repo.create_git_blob(file_info['content'], 'utf-8')
+            
+            # Read and prepare values.yaml
+            if self.values_file_path.exists():
+                with open(self.values_file_path, 'r', encoding='utf-8') as f:
+                    values_content = f.read()
+                values_blob = self.repo.create_git_blob(values_content, 'utf-8')
                 tree_elements.append({
-                    'path': file_info['path'],
+                    'path': str(self.values_file_path).replace('\\', '/'),
                     'mode': '100644',
                     'type': 'blob',
-                    'sha': blob.sha
+                    'sha': values_blob.sha
+                })
+                
+            # Read and prepare Chart.yaml
+            if self.chart_file_path.exists():
+                with open(self.chart_file_path, 'r', encoding='utf-8') as f:
+                    chart_content = f.read()
+                chart_blob = self.repo.create_git_blob(chart_content, 'utf-8')
+                tree_elements.append({
+                    'path': str(self.chart_file_path).replace('\\', '/'),
+                    'mode': '100644',
+                    'type': 'blob',
+                    'sha': chart_blob.sha
                 })
                 
             # Create new tree
@@ -470,6 +512,8 @@ class DockerImageUpdater:
             
         except Exception as e:
             self.logger.error(f"Failed to commit changes: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
             return False
 
     def create_or_update_pr(self, updates: List[Dict[str, Any]]) -> Optional[str]:
