@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Automated Docker Image Updater for Helm Charts
-"""
 
 import os
 import re
@@ -11,7 +8,8 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-
+from pathlib import Path
+from urllib.parse import urlparse
 import requests
 from github import Github, GithubException, InputGitTreeElement
 from packaging import version
@@ -39,7 +37,7 @@ class DockerImageUpdater:
         self.timeout = 30
         self.branch_name = "update-docker-images"
         
-        from pathlib import Path
+        
         self.values_file_path = Path("deploy/helm/values.yaml")
         self.chart_file_path = Path("deploy/helm/Chart.yaml")
         
@@ -93,8 +91,11 @@ class DockerImageUpdater:
     def get_ghcr_tags(self, repository: str) -> List[str]:
         """Fetch tags from GitHub Container Registry."""
         try:
-            if repository.startswith('ghcr.io/'):
-                repo_path = repository.replace('ghcr.io/', '')
+            repo_url = repository if repository.startswith(('http://', 'https://')) else f'https://{repository}'
+            parsed_url = urlparse(repo_url)
+            
+            if parsed_url.hostname == 'ghcr.io':
+                repo_path = parsed_url.path.lstrip('/')
             else:
                 repo_path = repository
                 
@@ -162,18 +163,23 @@ class DockerImageUpdater:
 
     def get_latest_version(self, repository: str, current_version: str = "") -> Optional[str]:
         """Get the latest semantic version for a Docker image."""
-        clean_repo = repository.strip().replace('docker.io/', '').replace('index.docker.io/', '')
+        clean_repo = repository.strip()
         
-        if clean_repo.startswith('ghcr.io/'):
-            tags = self.get_ghcr_tags(clean_repo)
-        elif '/' in clean_repo and not clean_repo.startswith('library/'):
-            if any(registry in clean_repo for registry in ['ghcr.io', 'gcr.io', 'quay.io']):
-                if 'ghcr.io' in clean_repo:
-                    tags = self.get_ghcr_tags(clean_repo)
-                else:
-                    tags = self.get_docker_hub_tags(clean_repo)
-            else:
-                tags = self.get_docker_hub_tags(clean_repo)
+        repo_url = clean_repo if clean_repo.startswith(('http://', 'https://')) else f'https://{clean_repo}'
+        parsed_url = urlparse(repo_url)
+        hostname = parsed_url.hostname
+        
+        if hostname in ['docker.io', 'index.docker.io']:
+            clean_repo = parsed_url.path.lstrip('/')
+        elif hostname == 'ghcr.io':
+            clean_repo = parsed_url.path.lstrip('/')
+        
+        if hostname == 'ghcr.io':
+            tags = self.get_ghcr_tags(repository)
+        elif hostname in ['docker.io', 'index.docker.io', None]:
+            tags = self.get_docker_hub_tags(clean_repo)
+        elif hostname in ['gcr.io', 'quay.io']:
+            tags = self.get_docker_hub_tags(clean_repo)
         else:
             tags = self.get_docker_hub_tags(clean_repo)
             
@@ -458,7 +464,6 @@ class DockerImageUpdater:
                 
             title = f"update docker image versions"
             
-            # Simple PR body
             body_parts = [
                 "## Updated Images",
                 ""
