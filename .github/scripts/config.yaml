@@ -1,0 +1,73 @@
+# Configuration for Docker Image Updater
+# This file allows customization of image update behavior
+
+image_config:
+  # Special handling for specific images
+  special_cases:
+    "solarwinds/solarwinds-otel-collector":
+      # Prefer versions without 'v' prefix
+      version_format: "numeric"  # or "v-prefix"
+      # Only update to stable releases (no alpha/beta)
+      stable_only: false
+      # Custom version pattern (regex)
+      version_pattern: "^\\d+\\.\\d+\\.\\d+$"
+    
+    "busybox":
+      # For busybox, prefer numeric versions
+      version_format: "numeric"
+      stable_only: true
+    
+    "alpine/k8s":
+      # Kubernetes version follows semantic versioning
+      version_format: "numeric"
+      stable_only: true
+  
+  # Global settings
+  global:
+    # Timeout for API requests (seconds)
+    api_timeout: 10
+    # Maximum number of tags to fetch per repository
+    max_tags_per_repo: 1000
+    # Default version pattern for semantic versioning
+    default_version_pattern: "^v?\\d+\\.\\d+\\.\\d+(?:-[\\w\\.-]+)?$"
+    
+  # Registry-specific settings
+  registries:
+    docker_hub:
+      # Rate limit handling
+      requests_per_minute: 100
+      # Pagination settings
+      page_size: 100
+      
+    ghcr:
+      # GitHub token scopes required
+      required_scopes: ["read:packages"]
+      # Fallback to releases if package API fails
+      fallback_to_releases: true
+      
+  # File paths (relative to repository root)
+  files:
+    values_yaml: "deploy/helm/values.yaml"
+    chart_yaml: "deploy/helm/Chart.yaml"
+    
+  # Branch and PR settings
+  git:
+    branch_name: "update-images"
+    commit_message_template: "chore: update Docker image versions ({timestamp})"
+    pr_title_template: "chore: update Docker image versions ({timestamp})"
+    
+  # Filtering options
+  filters:
+    # Skip these repositories entirely
+    skip_repositories:
+      - "example/deprecated-image"
+    
+    # Skip these tags patterns
+    skip_tag_patterns:
+      - ".*-SNAPSHOT$"
+      - ".*-dev$"
+      - "nightly"
+      - "latest"
+      
+    # Only include these tag patterns (if specified)
+    include_tag_patterns: []
