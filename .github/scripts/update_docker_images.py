@@ -317,10 +317,11 @@ class DockerImageUpdater:
             original_content = content
             
             # Find main collector image update for appVersion
-            main_image_update = next(
-                (update for update in updates if 'solarwinds-otel-collector' in update['repository']), 
-                None
-            )
+            main_image_update = None
+            for update in updates:
+                if 'solarwinds-otel-collector' in update['repository']:
+                    main_image_update = update
+                    break
                     
             # Update appVersion if main image was updated
             if main_image_update:
