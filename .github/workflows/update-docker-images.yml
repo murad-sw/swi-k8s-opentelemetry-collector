@@ -5,22 +5,6 @@ on:
     # Run every Monday at 9:00 AM UTC
     - cron: '0 9 * * 1'
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Preview mode - show what would be updated without making changes'
-        required: false
-        default: false
-        type: boolean
-      filter:
-        description: 'Only update images matching this repository name pattern (regex)'
-        required: false
-        default: ''
-        type: string
-      force_update:
-        description: 'Force update even if no newer versions are found'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
@@ -57,9 +41,6 @@ jobs:
     - name: Run Docker Image Updater
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        IMAGE_FILTER: ${{ github.event.inputs.filter || '' }}
-        FORCE_UPDATE: ${{ github.event.inputs.force_update || 'false' }}
       run: |
         python .github/scripts/update_docker_images.py
 
