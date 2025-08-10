@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
 import requests
-from github import Github, GithubException
+from github import Github, GithubException, InputGitTreeElement
 from packaging import version
 from ruamel.yaml import YAML
 
@@ -482,7 +482,6 @@ class DockerImageUpdater:
             # Get branch reference
             branch_ref = self.repo.get_git_ref(f"heads/{self.branch_name}")
             base_commit = self.repo.get_git_commit(branch_ref.object.sha)
-            base_tree = base_commit.tree
             
             # Prepare tree elements for modification
             tree_elements = []
@@ -491,28 +490,31 @@ class DockerImageUpdater:
             if self.values_file_path.exists():
                 with open(self.values_file_path, 'r', encoding='utf-8') as f:
                     values_content = f.read()
-                values_blob = self.repo.create_git_blob(values_content, 'utf-8')
-                tree_elements.append({
-                    'path': str(self.values_file_path).replace('\\', '/'),
-                    'mode': '100644',
-                    'type': 'blob',
-                    'sha': values_blob.sha
-                })
+                
+                # CORRECTED PART
+                tree_elements.append(InputGitTreeElement(
+                    path=str(self.values_file_path).replace('\\', '/'),
+                    mode='100644',
+                    type='blob',
+                    content=values_content  # <-- Use content directly, PyGithub handles blob creation
+                ))
                 
             # Read and prepare Chart.yaml
             if self.chart_file_path.exists():
                 with open(self.chart_file_path, 'r', encoding='utf-8') as f:
                     chart_content = f.read()
-                chart_blob = self.repo.create_git_blob(chart_content, 'utf-8')
-                tree_elements.append({
-                    'path': str(self.chart_file_path).replace('\\', '/'),
-                    'mode': '100644',
-                    'type': 'blob',
-                    'sha': chart_blob.sha
-                })
+
+                # CORRECTED PART
+                tree_elements.append(InputGitTreeElement(
+                    path=str(self.chart_file_path).replace('\\', '/'),
+                    mode='100644',
+                    type='blob',
+                    content=chart_content # <-- Use content directly
+                ))
                 
             # Create new tree with updated files
-            new_tree = self.repo.create_git_tree(tree_elements, base_tree)
+            # No need to specify base_tree here, the API will handle it
+            new_tree = self.repo.create_git_tree(tree_elements)
             
             # Create commit
             commit = self.repo.create_git_commit(commit_message, new_tree, [base_commit])
