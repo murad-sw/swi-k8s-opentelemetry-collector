@@ -63,12 +63,3 @@ jobs:
       run: |
         python .github/scripts/update_docker_images.py
 
-    - name: Upload change logs
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: image-update-logs
-        path: |
-          image_update_*.log
-          changes_*.json
-        retention-days: 30
