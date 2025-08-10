@@ -1,4 +1,0 @@
-PyGithub==2.1.1
-ruamel.yaml==0.18.5
-packaging==23.2
-requests==2.31.0

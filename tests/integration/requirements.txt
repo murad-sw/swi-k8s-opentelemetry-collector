@@ -1,4 +1,0 @@
-pytest==7.2.1
-requests
-python-dotenv==0.21.1
-prometheus_client

@@ -1,37 +1,37 @@
 apiVersion: v2
 name: swo-k8s-collector
-version: 4.6.0-alpha.6
+version: 4.6.0-alpha.7
 appVersion: 0.119.10
 description: SolarWinds Kubernetes Integration
 keywords:
-  - monitoring
-  - observability
-  - metric
-  - logs
-  - events
-  - kubernetes
+- monitoring
+- observability
+- metric
+- logs
+- events
+- kubernetes
 home: https://solarwinds.com/
 icon: https://helm.solarwinds.com/favicon.png
 sources:
-  - https://github.com/solarwinds/swi-k8s-opentelemetry-collector/tree/master/deploy/helm
+- https://github.com/solarwinds/swi-k8s-opentelemetry-collector/tree/master/deploy/helm
 maintainers:
-  - name: SolarWinds
-    email: support@solarwinds.com
+- name: SolarWinds
+  email: support@solarwinds.com
 dependencies:
-  - name: kube-state-metrics
-    repository: https://prometheus-community.github.io/helm-charts
-    version: 5.33.1
-    condition: kube-state-metrics.enabled
-  - name: opentelemetry-operator
-    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
-    version: 0.88.6 # 0.82.2 chart version includes otel-operator version 0.119.0
-    alias: operator
-    condition: operator.enabled
-  - name: cert-manager
-    version: v1.18.0-alpha.0
-    alias: certmanager
-    repository: https://charts.jetstack.io
-    condition: certmanager.enabled
+- name: kube-state-metrics
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 5.33.1
+  condition: kube-state-metrics.enabled
+- name: opentelemetry-operator
+  repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+  version: 0.88.6   # 0.82.2 chart version includes otel-operator version 0.119.0
+  alias: operator
+  condition: operator.enabled
+- name: cert-manager
+  version: v1.18.0-alpha.0
+  alias: certmanager
+  repository: https://charts.jetstack.io
+  condition: certmanager.enabled
 annotations:
   artifacthub.io/prerelease: "false"
   artifacthub.io/license: Apache-2.0
