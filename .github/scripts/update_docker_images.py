@@ -11,7 +11,6 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-from pathlib import Path
 
 import requests
 from github import Github, GithubException, InputGitTreeElement
@@ -43,12 +42,6 @@ class DockerImageUpdater:
         self.yaml.width = 4096
         self.yaml.default_flow_style = False
         self.yaml.indent(mapping=2, sequence=4, offset=2)
-        
-        # Paths
-        self.values_file_path = Path("deploy/helm/values.yaml")
-        self.chart_file_path = Path("deploy/helm/Chart.yaml")
-        self.branch_name = "update-images"
-        self.timeout = 30
         
         # Repository info
         repo_info = os.environ.get('GITHUB_REPOSITORY', '').split('/')
@@ -239,10 +232,6 @@ class DockerImageUpdater:
                 
         return images
 
-    def should_update_image(self, repository: str) -> bool:
-        """Check if image should be updated."""
-        return True
-
     def update_values_yaml(self) -> List[Dict[str, Any]]:
         """Update image tags in values.yaml file."""
         if not self.values_file_path.exists():
@@ -259,9 +248,6 @@ class DockerImageUpdater:
             repository = image_config['repository']
             current_tag = image_config['tag']
             path = image_config['path']
-            
-            if not self.should_update_image(repository):
-                continue
                 
             if not current_tag or current_tag.startswith('<') or current_tag.startswith('${'):
                 self.logger.debug(f"Skipping {repository} with placeholder tag: {current_tag}")
@@ -287,6 +273,31 @@ class DockerImageUpdater:
                 
         return updates
 
+    def _bump_version(self, old_version: str) -> str:
+        """Bump version using semantic versioning rules."""
+        try:
+            if '-alpha.' in old_version:
+                base_version, alpha_part = old_version.split('-alpha.', 1)
+                if alpha_part.isdigit():
+                    return f"{base_version}-alpha.{int(alpha_part) + 1}"
+            elif '-beta.' in old_version:
+                base_version, beta_part = old_version.split('-beta.', 1)
+                if beta_part.isdigit():
+                    return f"{base_version}-beta.{int(beta_part) + 1}"
+            
+            # Handle standard semantic versions
+            version_parts = old_version.split('.')
+            if len(version_parts) >= 3:
+                patch_part = version_parts[2].split('-')[0]  # Handle pre-release suffixes
+                if patch_part.isdigit():
+                    new_patch = str(int(patch_part) + 1)
+                    return f"{version_parts[0]}.{version_parts[1]}.{new_patch}"
+                    
+        except Exception as e:
+            self.logger.warning(f"Could not parse version {old_version}: {e}")
+            
+        return old_version  # Return original if parsing fails
+
     def update_chart_version(self, updates: List[Dict[str, Any]]) -> bool:
         """Update Chart.yaml version and appVersion minimally."""
         if not updates or not self.chart_file_path.exists():
@@ -299,11 +310,10 @@ class DockerImageUpdater:
             original_content = content
             
             # Find main collector image update for appVersion
-            main_image_update = None
-            for update in updates:
-                if 'solarwinds-otel-collector' in update['repository']:
-                    main_image_update = update
-                    break
+            main_image_update = next(
+                (update for update in updates if 'solarwinds-otel-collector' in update['repository']), 
+                None
+            )
                     
             # Update appVersion if main image was updated
             if main_image_update:
@@ -319,49 +329,9 @@ class DockerImageUpdater:
             version_match = re.search(r'^version:\s+(.+)$', content, re.MULTILINE)
             if version_match:
                 old_version = version_match.group(1)
-                try:
-                    if '-alpha.' in old_version:
-                        base_version, alpha_part = old_version.split('-alpha.')
-                        if alpha_part.isdigit():
-                            alpha_num = int(alpha_part) + 1
-                            new_version = f"{base_version}-alpha.{alpha_num}"
-                        else:
-                            parts = base_version.split('.')
-                            if len(parts) == 3 and parts[2].isdigit():
-                                parts[2] = str(int(parts[2]) + 1)
-                                new_version = '.'.join(parts)
-                            else:
-                                new_version = old_version
-                    elif '-beta.' in old_version:
-                        base_version, beta_part = old_version.split('-beta.')
-                        if beta_part.isdigit():
-                            beta_num = int(beta_part) + 1
-                            new_version = f"{base_version}-beta.{beta_num}"
-                        else:
-                            parts = base_version.split('.')
-                            if len(parts) == 3 and parts[2].isdigit():
-                                parts[2] = str(int(parts[2]) + 1)
-                                new_version = '.'.join(parts)
-                            else:
-                                new_version = old_version
-                    else:
-                        version_parts = old_version.split('.')
-                        if len(version_parts) >= 3:
-                            if '-' in version_parts[2]:
-                                base_part = version_parts[2].split('-')[0]
-                                if base_part.isdigit():
-                                    new_base = str(int(base_part) + 1)
-                                    new_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
-                                else:
-                                    new_version = old_version
-                            elif version_parts[2].isdigit():
-                                version_parts[2] = str(int(version_parts[2]) + 1)
-                                new_version = '.'.join(version_parts)
-                            else:
-                                new_version = old_version
-                        else:
-                            new_version = old_version
-                            
+                new_version = self._bump_version(old_version)
+                
+                if new_version != old_version:
                     content = re.sub(
                         r'^version:\s+.*$',
                         f'version: {new_version}',
@@ -369,9 +339,6 @@ class DockerImageUpdater:
                         flags=re.MULTILINE
                     )
                     self.logger.info(f"Updated Chart version: {old_version} → {new_version}")
-                        
-                except Exception as e:
-                    self.logger.warning(f"Could not update chart version: {e}")
                 
             # Only write if content changed
             if content != original_content:
@@ -418,8 +385,7 @@ class DockerImageUpdater:
             return True
             
         try:
-            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            commit_message = f"chore: update Docker image versions ({timestamp})\n\n"
+            commit_message = f"chore: update docker image versions\n\n"
             
             for update in updates:
                 commit_message += f"- {update['repository']}: {update['old_tag']} → {update['new_tag']}\n"
@@ -482,8 +448,7 @@ class DockerImageUpdater:
                 existing_pr = pr
                 break
                 
-            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            title = f"chore: update Docker image versions ({timestamp})"
+            title = f"update docker image versions"
             
             # Simple PR body
             body_parts = [
