@@ -36,6 +36,13 @@ class DockerImageUpdater:
         self.github = Github(github_token)
         self.logger = setup_logging()
         
+        self.timeout = 30
+        self.branch_name = "update-docker-images"
+        
+        from pathlib import Path
+        self.values_file_path = Path("deploy/helm/values.yaml")
+        self.chart_file_path = Path("deploy/helm/Chart.yaml")
+        
         # YAML configuration
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
