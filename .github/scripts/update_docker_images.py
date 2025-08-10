@@ -360,56 +360,61 @@ class DockerImageUpdater:
             # Bump chart version (patch version)
             old_chart_version = chart_data.get('version', '0.0.0')
             try:
-                # Handle alpha/beta versions
-                version_parts = old_chart_version.split('.')
-                if len(version_parts) >= 3:
-                    if '-' in version_parts[2]:
-                        base_part, pre_release = version_parts[2].split('-', 1)
-                        if 'alpha' in pre_release and '.' in pre_release:
-                            # Handle format like "4.6.0-alpha.6"
-                            alpha_parts = pre_release.split('.')
-                            if len(alpha_parts) >= 2 and alpha_parts[1].isdigit():
-                                alpha_num = int(alpha_parts[1]) + 1
-                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-alpha.{alpha_num}"
-                            else:
-                                # Fallback: just increment base version
-                                try:
-                                    new_base = str(int(base_part) + 1)
-                                    new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
-                                except ValueError:
-                                    new_chart_version = old_chart_version
-                        elif 'beta' in pre_release and '.' in pre_release:
-                            # Handle format like "4.6.0-beta.1"
-                            beta_parts = pre_release.split('.')
-                            if len(beta_parts) >= 2 and beta_parts[1].isdigit():
-                                beta_num = int(beta_parts[1]) + 1
-                                new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{base_part}-beta.{beta_num}"
-                            else:
-                                try:
-                                    new_base = str(int(base_part) + 1)
-                                    new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
-                                except ValueError:
-                                    new_chart_version = old_chart_version
+                # Handle different version formats
+                if '-alpha.' in old_chart_version:
+                    # Handle format like "4.6.0-alpha.6"
+                    base_version, alpha_part = old_chart_version.split('-alpha.')
+                    if alpha_part.isdigit():
+                        alpha_num = int(alpha_part) + 1
+                        new_chart_version = f"{base_version}-alpha.{alpha_num}"
+                    else:
+                        # Fallback: increment patch version
+                        parts = base_version.split('.')
+                        if len(parts) == 3 and parts[2].isdigit():
+                            parts[2] = str(int(parts[2]) + 1)
+                            new_chart_version = '.'.join(parts)
                         else:
-                            # Simple increment of base version for other pre-release formats
-                            try:
+                            new_chart_version = old_chart_version
+                elif '-beta.' in old_chart_version:
+                    # Handle format like "4.6.0-beta.1"
+                    base_version, beta_part = old_chart_version.split('-beta.')
+                    if beta_part.isdigit():
+                        beta_num = int(beta_part) + 1
+                        new_chart_version = f"{base_version}-beta.{beta_num}"
+                    else:
+                        # Fallback: increment patch version
+                        parts = base_version.split('.')
+                        if len(parts) == 3 and parts[2].isdigit():
+                            parts[2] = str(int(parts[2]) + 1)
+                            new_chart_version = '.'.join(parts)
+                        else:
+                            new_chart_version = old_chart_version
+                else:
+                    # Regular semantic version (e.g., "1.2.3")
+                    version_parts = old_chart_version.split('.')
+                    if len(version_parts) == 3:
+                        # Check if patch version has pre-release suffix
+                        if '-' in version_parts[2]:
+                            base_part, pre_release = version_parts[2].split('-', 1)
+                            if base_part.isdigit():
                                 new_base = str(int(base_part) + 1)
                                 new_chart_version = f"{version_parts[0]}.{version_parts[1]}.{new_base}"
-                            except ValueError:
+                            else:
                                 new_chart_version = old_chart_version
-                    else:
-                        # Regular version without pre-release
-                        if version_parts[2].isdigit():
+                        elif version_parts[2].isdigit():
+                            # Simple patch increment
                             version_parts[2] = str(int(version_parts[2]) + 1)
                             new_chart_version = '.'.join(version_parts)
                         else:
                             new_chart_version = old_chart_version
-                        
-                    if new_chart_version != old_chart_version:
-                        chart_data['version'] = new_chart_version
-                        self.logger.info(f"Updated Chart version: {old_chart_version} → {new_chart_version}")
                     else:
-                        self.logger.info(f"Chart version unchanged: {old_chart_version}")
+                        new_chart_version = old_chart_version
+                        
+                if new_chart_version != old_chart_version:
+                    chart_data['version'] = new_chart_version
+                    self.logger.info(f"Updated Chart version: {old_chart_version} → {new_chart_version}")
+                else:
+                    self.logger.info(f"Chart version unchanged: {old_chart_version}")
                         
             except Exception as e:
                 self.logger.warning(f"Could not update chart version: {e}")
